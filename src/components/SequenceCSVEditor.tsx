@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react'
+import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { useAppStore } from '@/store/app-store'
 import type { SequenceStep, EasingType } from '@/types'
 
@@ -105,6 +105,7 @@ function EditableCell({ value, type, isSelected, onSelect, onChange, onTabNext, 
 export function SequenceCSVEditor() {
   const {
     sequenceRows, updateSequenceRow, insertSequenceRow, deleteSequenceRow, moveSequenceRow,
+    reorderSequenceRows, moveSequenceRowToExtreme, moveSequenceRowToStep,
     isCSVEditorOpen, setCSVEditorOpen,
     liveSyncEnabled, setLiveSyncEnabled,
     pendingChanges, saveSequenceAnimation,
@@ -116,11 +117,28 @@ export function SequenceCSVEditor() {
   } = useAppStore()
 
   const [selectedCell, setSelectedCell] = useState<{ row: number; col: number } | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; stepId: number } | null>(null)
+  const [draggedRowIndex, setDraggedRowIndex] = useState<number | null>(null)
+  const [dragOverRowIndex, setDragOverRowIndex] = useState<number | null>(null)
 
   const steps = plan?.steps ?? []
   const total = steps.length
   const current = steps[playbackStep]
   const overallRatio = total > 0 ? (playbackStep + playbackProgress) / total : 0
+
+  // Close context menu on outside click or escape
+  useEffect(() => {
+    const handleGlobalClick = () => setContextMenu(null)
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setContextMenu(null)
+    }
+    window.addEventListener('click', handleGlobalClick)
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('click', handleGlobalClick)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [])
 
   const handleTrackClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (total === 0) return
@@ -166,6 +184,29 @@ export function SequenceCSVEditor() {
     setPlaybackProgress(0)
   }
 
+  const handleContextMenuAction = (action: 'start' | 'latest' | 'step' | 'insert' | 'delete') => {
+    if (!contextMenu) return
+    const { stepId } = contextMenu
+
+    if (action === 'start') {
+      moveSequenceRowToExtreme(stepId, 'start')
+    } else if (action === 'latest') {
+      moveSequenceRowToExtreme(stepId, 'latest')
+    } else if (action === 'step') {
+      const target = window.prompt(`Move Step #${stepId} to which step position? (1 - ${sequenceRows.length})`, String(stepId))
+      if (target) {
+        const num = parseInt(target, 10)
+        if (!isNaN(num)) moveSequenceRowToStep(stepId, num)
+      }
+    } else if (action === 'insert') {
+      insertSequenceRow(stepId)
+    } else if (action === 'delete') {
+      deleteSequenceRow(stepId)
+    }
+
+    setContextMenu(null)
+  }
+
   return (
     <div className="csv-editor-panel">
       {/* Toolbar */}
@@ -181,6 +222,11 @@ export function SequenceCSVEditor() {
           <span className="text-muted text-xs">
             · {sequenceRows.reduce((a, r) => a + r.duration_s, 0).toFixed(1)}s
           </span>
+          {playbackPlaying && (
+            <span style={{ fontSize: 10, color: 'var(--yellow)', fontWeight: 600, marginLeft: 4 }}>
+              🔒 Locked
+            </span>
+          )}
         </div>
         <div className="csv-toolbar-right">
           <button className="btn btn-sm" onClick={copySequencePrompt} title="Copy AI prompt + raw CSV (2 formats)">📋 Copy Prompt</button>
@@ -228,6 +274,9 @@ export function SequenceCSVEditor() {
           </button>
         )}
         {liveSyncEnabled && <span className="text-muted text-xs" style={{ color:'var(--green)' }}>● Auto-sync to 3D</span>}
+        <span className="text-muted text-xs" style={{ marginLeft: 'auto', fontSize: 10 }}>
+          💡 Drag rows or Right-Click to Reorder
+        </span>
       </div>
 
       {/* Table */}
@@ -235,46 +284,129 @@ export function SequenceCSVEditor() {
         <table className="csv-table">
           <thead>
             <tr>
-              <th style={{ width: 36 }} />
+              <th style={{ width: 44 }}>Move</th>
               {COLS.map(c => (
                 <th key={c.key} style={{ minWidth: c.width, width: c.width }}>{c.label}</th>
               ))}
-              <th style={{ width: 64 }}>Actions</th>
+              <th style={{ width: 68 }}>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {sequenceRows.map((row, rowIdx) => (
-              <tr key={row.step_id} className={selectedCell?.row === rowIdx ? 'row-selected' : ''}>
-                {/* Drag grip */}
-                <td className="csv-grip">
-                  <button className="grip-btn" onClick={() => moveSequenceRow(row.step_id, 'up')} disabled={rowIdx === 0}>▲</button>
-                  <button className="grip-btn" onClick={() => moveSequenceRow(row.step_id, 'down')} disabled={rowIdx === sequenceRows.length - 1}>▼</button>
-                </td>
+            {sequenceRows.map((row, rowIdx) => {
+              const isDragOver = dragOverRowIndex === rowIdx
+              return (
+                <tr
+                  key={row.step_id}
+                  className={`${selectedCell?.row === rowIdx ? 'row-selected' : ''}${isDragOver ? ' row-drag-over' : ''}`}
+                  onContextMenu={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setContextMenu({ x: e.clientX, y: e.clientY, stepId: row.step_id })
+                  }}
+                  draggable={!playbackPlaying}
+                  onDragStart={(e) => {
+                    if (playbackPlaying) { e.preventDefault(); return }
+                    setDraggedRowIndex(rowIdx)
+                    e.dataTransfer.effectAllowed = 'move'
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault()
+                    if (draggedRowIndex !== null && draggedRowIndex !== rowIdx) {
+                      setDragOverRowIndex(rowIdx)
+                    }
+                  }}
+                  onDragLeave={() => {
+                    if (dragOverRowIndex === rowIdx) setDragOverRowIndex(null)
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    if (draggedRowIndex !== null && draggedRowIndex !== rowIdx) {
+                      reorderSequenceRows(draggedRowIndex, rowIdx)
+                    }
+                    setDraggedRowIndex(null)
+                    setDragOverRowIndex(null)
+                  }}
+                  onDragEnd={() => {
+                    setDraggedRowIndex(null)
+                    setDragOverRowIndex(null)
+                  }}
+                >
+                  {/* Drag grip + Up/Down arrows */}
+                  <td className="csv-grip" style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <span
+                      style={{ cursor: playbackPlaying ? 'not-allowed' : 'grab', color: 'var(--text-2)', fontSize: 11, userSelect: 'none', padding: '0 2px' }}
+                      title="Drag to reorder sequence row"
+                    >
+                      ⋮⋮
+                    </span>
+                    <button
+                      className="grip-btn"
+                      onClick={() => moveSequenceRow(row.step_id, 'up')}
+                      disabled={rowIdx === 0 || playbackPlaying}
+                      title="Move Up"
+                    >
+                      ▲
+                    </button>
+                    <button
+                      className="grip-btn"
+                      onClick={() => moveSequenceRow(row.step_id, 'down')}
+                      disabled={rowIdx === sequenceRows.length - 1 || playbackPlaying}
+                      title="Move Down"
+                    >
+                      ▼
+                    </button>
+                  </td>
 
-                {COLS.map((col, colIdx) => (
-                  <EditableCell
-                    key={col.key}
-                    value={row[col.key] as string | number}
-                    type={col.type}
-                    rowId={row.step_id}
-                    colKey={col.key}
-                    isSelected={selectedCell?.row === rowIdx && selectedCell?.col === colIdx}
-                    onSelect={() => setSelectedCell({ row: rowIdx, col: colIdx })}
-                    onChange={(v) => handleChange(row.step_id, col.key, v)}
-                    onTabNext={getTabNext(rowIdx, colIdx)}
-                    onTabPrev={getTabPrev(rowIdx, colIdx)}
-                    onEnterDown={getEnterDown(rowIdx)}
-                    onEnterUp={getEnterUp(rowIdx)}
-                  />
-                ))}
+                  {COLS.map((col, colIdx) => (
+                    <EditableCell
+                      key={col.key}
+                      value={row[col.key] as string | number}
+                      type={col.type}
+                      rowId={row.step_id}
+                      colKey={col.key}
+                      isSelected={selectedCell?.row === rowIdx && selectedCell?.col === colIdx}
+                      onSelect={() => setSelectedCell({ row: rowIdx, col: colIdx })}
+                      onChange={(v) => handleChange(row.step_id, col.key, v)}
+                      onTabNext={getTabNext(rowIdx, colIdx)}
+                      onTabPrev={getTabPrev(rowIdx, colIdx)}
+                      onEnterDown={getEnterDown(rowIdx)}
+                      onEnterUp={getEnterUp(rowIdx)}
+                    />
+                  ))}
 
-                {/* Row actions */}
-                <td className="csv-row-actions">
-                  <button className="grip-btn" onClick={() => insertSequenceRow(row.step_id)} title="Insert row below">+</button>
-                  <button className="grip-btn danger" onClick={() => deleteSequenceRow(row.step_id)} title="Delete row">×</button>
-                </td>
-              </tr>
-            ))}
+                  {/* Row actions */}
+                  <td className="csv-row-actions">
+                    <button
+                      className="grip-btn"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        setContextMenu({ x: rect.left - 130, y: rect.bottom + 4, stepId: row.step_id })
+                      }}
+                      title="Step Menu (Set at Start / Latest / Move to Step)"
+                    >
+                      ⋮
+                    </button>
+                    <button
+                      className="grip-btn"
+                      onClick={() => insertSequenceRow(row.step_id)}
+                      disabled={playbackPlaying}
+                      title="Insert row below"
+                    >
+                      +
+                    </button>
+                    <button
+                      className="grip-btn danger"
+                      onClick={() => deleteSequenceRow(row.step_id)}
+                      disabled={playbackPlaying}
+                      title="Delete row"
+                    >
+                      ×
+                    </button>
+                  </td>
+                </tr>
+              )
+            })}
 
             {sequenceRows.length === 0 && (
               <tr>
@@ -310,8 +442,41 @@ export function SequenceCSVEditor() {
 
       {/* Add row button */}
       <div className="csv-footer">
-        <button className="btn btn-sm" onClick={() => insertSequenceRow()}>+ Add Step</button>
+        <button
+          className="btn btn-sm"
+          onClick={() => insertSequenceRow()}
+          disabled={playbackPlaying}
+        >
+          + Add Step
+        </button>
       </div>
+
+      {/* Right-Click / Context Menu Popup */}
+      {contextMenu && (
+        <div
+          className="csv-context-menu"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="context-menu-header">Step #{contextMenu.stepId} Options</div>
+          <button className="context-menu-item" onClick={() => handleContextMenuAction('start')}>
+            <span>⬆</span> Set as Start (Step 1)
+          </button>
+          <button className="context-menu-item" onClick={() => handleContextMenuAction('latest')}>
+            <span>⬇</span> Set as Latest (End)
+          </button>
+          <button className="context-menu-item" onClick={() => handleContextMenuAction('step')}>
+            <span>🔢</span> Move to Step...
+          </button>
+          <div className="context-menu-divider" />
+          <button className="context-menu-item" onClick={() => handleContextMenuAction('insert')}>
+            <span>➕</span> Insert Step Below
+          </button>
+          <button className="context-menu-item danger" onClick={() => handleContextMenuAction('delete')}>
+            <span>🗑</span> Delete Step
+          </button>
+        </div>
+      )}
     </div>
   )
 }

@@ -163,12 +163,14 @@ function BabylonCanvas() {
   }
 
   const handleDragOver = (e: React.DragEvent) => {
+    if (playbackPlaying) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'copy'
     updatePlacementGhost(e.clientX, e.clientY)
   }
 
   const handleDrop = (e: React.DragEvent) => {
+    if (playbackPlaying) return
     e.preventDefault()
     const item = draggedCatalogItem
     if (!item) return
@@ -349,9 +351,10 @@ function BabylonCanvas() {
       dirLight.position = new Vector3(8, 12, 8)
       dirLight.intensity = 0.5
 
-      // Click on 3D meshes to select
+      // Click on 3D meshes to select (unless sequence is playing)
       scene.onPointerObservable.add((pointerInfo) => {
         if (pointerInfo.type === PointerEventTypes.POINTERDOWN) {
+          if (useAppStore.getState().playbackPlaying) return
           const pick = pointerInfo.pickInfo
           if (pick && pick.hit && pick.pickedMesh && pick.pickedMesh.name.startsWith('furn-')) {
             const id = pick.pickedMesh.name.replace('furn-', '')
@@ -421,6 +424,8 @@ function BabylonCanvas() {
         m.name.startsWith('arch-') ||
         m.name.startsWith('ghost-') ||
         m.name.startsWith('pathway-') ||
+        m.name.startsWith('dual-ghost-') ||
+        m.name.startsWith('motion-vector-') ||
         m.name.startsWith('room-floor') ||
         m.name.startsWith('hallway-floor')
       )
@@ -644,6 +649,87 @@ function BabylonCanvas() {
       }
     }
 
+    // 6. Dual 3D Ghosts & Motion Trajectory Vector for Selected Item (v08)
+    const selectedItem = furniture.find(f => f.id === selectedId)
+    if (selectedItem && selectedItem.placementMode && selectedItem.placementMode !== 'static') {
+      const sPos = selectedItem.startPosition ?? selectedItem.position
+      const ePos = selectedItem.endPosition ?? selectedItem.position
+      const sRot = selectedItem.startRotation ?? selectedItem.rotation ?? 0
+      const eRot = selectedItem.endRotation ?? selectedItem.rotation ?? 0
+
+      if (sPos && ePos) {
+        // Start Ghost: Cyan (#06b6d4, alpha 0.35)
+        const startGhost = MeshBuilder.CreateBox('dual-ghost-start', {
+          width: selectedItem.assembled.w * SCALE,
+          height: selectedItem.assembled.h * SCALE,
+          depth: selectedItem.assembled.d * SCALE,
+        }, scene)
+        startGhost.position.x = (sPos.x + selectedItem.assembled.w / 2) * SCALE
+        startGhost.position.z = (sPos.y + selectedItem.assembled.d / 2) * SCALE
+        startGhost.position.y = (selectedItem.assembled.h / 2) * SCALE
+        startGhost.rotation.y = (sRot * Math.PI) / 180
+
+        const startMat = new StandardMaterial('dual-ghost-start-mat', scene)
+        startMat.diffuseColor = hexToColor3('#06b6d4')
+        startMat.emissiveColor = hexToColor3('#0891b2').scale(0.35)
+        startMat.alpha = 0.35
+        startGhost.material = startMat
+        startGhost.enableEdgesRendering(0.95)
+        startGhost.edgesWidth = 2.5
+        startGhost.edgesColor = new Color4(0.02, 0.85, 1.0, 0.9)
+
+        // Floor waypoint marker [S]
+        const sDisc = MeshBuilder.CreateDisc('dual-ghost-start-disc', { radius: 0.14 }, scene)
+        sDisc.rotation.x = Math.PI / 2
+        sDisc.position.x = startGhost.position.x
+        sDisc.position.z = startGhost.position.z
+        sDisc.position.y = 0.006
+        const sDiscMat = new StandardMaterial('dual-ghost-sdisc-mat', scene)
+        sDiscMat.diffuseColor = hexToColor3('#06b6d4')
+        sDiscMat.emissiveColor = hexToColor3('#06b6d4')
+        sDisc.material = sDiscMat
+
+        // End Ghost: Green (#10b981, alpha 0.35)
+        const endGhost = MeshBuilder.CreateBox('dual-ghost-end', {
+          width: selectedItem.assembled.w * SCALE,
+          height: selectedItem.assembled.h * SCALE,
+          depth: selectedItem.assembled.d * SCALE,
+        }, scene)
+        endGhost.position.x = (ePos.x + selectedItem.assembled.w / 2) * SCALE
+        endGhost.position.z = (ePos.y + selectedItem.assembled.d / 2) * SCALE
+        endGhost.position.y = (selectedItem.assembled.h / 2) * SCALE
+        endGhost.rotation.y = (eRot * Math.PI) / 180
+
+        const endMat = new StandardMaterial('dual-ghost-end-mat', scene)
+        endMat.diffuseColor = hexToColor3('#10b981')
+        endMat.emissiveColor = hexToColor3('#059669').scale(0.35)
+        endMat.alpha = 0.35
+        endGhost.material = endMat
+        endGhost.enableEdgesRendering(0.95)
+        endGhost.edgesWidth = 2.5
+        endGhost.edgesColor = new Color4(0.06, 0.72, 0.5, 0.9)
+
+        // Floor waypoint marker [E]
+        const eDisc = MeshBuilder.CreateDisc('dual-ghost-end-disc', { radius: 0.14 }, scene)
+        eDisc.rotation.x = Math.PI / 2
+        eDisc.position.x = endGhost.position.x
+        eDisc.position.z = endGhost.position.z
+        eDisc.position.y = 0.006
+        const eDiscMat = new StandardMaterial('dual-ghost-edisc-mat', scene)
+        eDiscMat.diffuseColor = hexToColor3('#10b981')
+        eDiscMat.emissiveColor = hexToColor3('#10b981')
+        eDisc.material = eDiscMat
+
+        // Motion Trajectory Line
+        const vectorPoints = [
+          new Vector3(startGhost.position.x, 0.007, startGhost.position.z),
+          new Vector3(endGhost.position.x, 0.007, endGhost.position.z),
+        ]
+        const trajLine = MeshBuilder.CreateLines('motion-vector-line', { points: vectorPoints }, scene)
+        trajLine.color = new Color3(0.22, 0.74, 0.97)
+      }
+    }
+
     updateCameraFraming(display.viewMode ?? '3d')
   }, [furniture, room, display, selectedId, theme, plan, playbackStep])
 
@@ -732,6 +818,17 @@ function BabylonCanvas() {
           👻 Ghost
         </button>
       </div>
+
+      {/* Floating Playback Safety Lock HUD (v08) */}
+      {playbackPlaying && (
+        <div className="canvas-playback-lock-hud">
+          <span className="lock-icon">🔒</span>
+          <span className="lock-text">Sequence Playing — Canvas & Design Locked</span>
+          <button className="lock-pause-btn" onClick={() => setPlaybackPlaying(false)}>
+            ⏸ Pause to Edit
+          </button>
+        </div>
+      )}
     </div>
   )
 }

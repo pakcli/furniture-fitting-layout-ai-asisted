@@ -14,13 +14,14 @@ export function AssetGrid() {
     setDropGhostPos,
     placeCatalogItemAt,
     room,
+    playbackPlaying,
   } = useAppStore()
 
   const items = getItemsForFolder(catalogSelectedFolder, catalogSearch, catalogSortBy)
 
   const handleDragStart = (e: React.DragEvent, item: FurnitureItem) => {
-    // Only placeable items can be dragged
-    if (item.type === 'door' || item.type === 'window' || item.type === 'wall') {
+    // Only placeable items can be dragged, and not while playback is playing
+    if (playbackPlaying || item.type === 'door' || item.type === 'window' || item.type === 'wall') {
       e.preventDefault()
       return
     }
@@ -52,6 +53,7 @@ export function AssetGrid() {
 
   // Double click / quick add places in center of room
   const handleQuickAdd = (item: FurnitureItem) => {
+    if (playbackPlaying) return
     if (item.type === 'door' || item.type === 'window' || item.type === 'wall') return
     const walls = room.walls
     const roomW = walls.length > 1 ? Math.abs(walls[1].x2 - walls[0].x1) : 400
@@ -79,13 +81,15 @@ export function AssetGrid() {
         return (
           <div
             key={item.id}
-            className={`catalog-item-card${isObstacle ? ' is-obstacle' : ''}`}
-            draggable={!isObstacle}
+            className={`catalog-item-card${isObstacle ? ' is-obstacle' : ''}${playbackPlaying ? ' is-locked' : ''}`}
+            draggable={!isObstacle && !playbackPlaying}
             onDragStart={(e) => handleDragStart(e, item)}
             onDragEnd={handleDragEnd}
             onDoubleClick={() => handleQuickAdd(item)}
             title={
-              isObstacle
+              playbackPlaying
+                ? 'Simulation is actively playing — pausing required to place assets'
+                : isObstacle
                 ? `${item.name} — Room structural obstacle (configured via Room Tab)`
                 : `Drag & drop into 3D view or double-click to place. Dimensions: ${item.assembled.w}×${item.assembled.d}×${item.assembled.h}cm`
             }
@@ -123,11 +127,12 @@ export function AssetGrid() {
                 {!isObstacle && (
                   <button
                     className="card-quick-add-btn"
+                    disabled={playbackPlaying}
                     onClick={(e) => {
                       e.stopPropagation()
                       handleQuickAdd(item)
                     }}
-                    title="Quick place in room center"
+                    title={playbackPlaying ? 'Locked during playback' : 'Quick place in room center'}
                   >
                     + Add
                   </button>

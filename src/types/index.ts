@@ -46,6 +46,9 @@ export interface FurnitureComponent {
   reassemblyRisk: 'none' | 'low' | 'medium' | 'high' | 'warranty-void'
 }
 
+export type PlacementMode = 'static' | 'inserting' | 'packing'
+export type TransformTarget = 'current' | 'start' | 'end'
+
 export interface FurnitureItem {
   id: string
   name: string
@@ -59,6 +62,13 @@ export interface FurnitureItem {
   type?: ObjectType
   category?: string // e.g. "furniture/seating"
   icon?: string // emoji for catalog thumbnail
+  // Placement mode & transforms (v08)
+  placementMode?: PlacementMode
+  startPosition?: { x: number; y: number }
+  startRotation?: number
+  endPosition?: { x: number; y: number }
+  endRotation?: number
+  localProgress?: number // 0.0 to 1.0 for local scrub preview
   // runtime state
   position?: { x: number; y: number }
   rotation?: number // degrees

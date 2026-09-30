@@ -5,6 +5,7 @@ import type {
   FurnitureItem, Room, SolverPlan, PlanStep,
   Theme, CatalogMode, CatalogLayout, DisplaySettings,
   SequenceStep, InspectorTab,
+  PlacementMode, TransformTarget,
 } from '@/types'
 import {
   MASTER_BEDROOM_ROOM,
@@ -158,6 +159,20 @@ interface AppStore {
   dropGhostPos: { x: number; y: number } | null
   setDropGhostPos: (pos: { x: number; y: number } | null) => void
   placeCatalogItemAt: (item: FurnitureItem, x: number, y: number) => void
+
+  // v08: Transform Triad & Placement Modes
+  selectedTransformTarget: TransformTarget
+  setSelectedTransformTarget: (target: TransformTarget) => void
+  setFurniturePlacementMode: (id: string, mode: PlacementMode) => void
+  updateFurnitureTransformTarget: (id: string, target: TransformTarget, patch: { x?: number; y?: number; rotation?: number }) => void
+  snapFurnitureToEntrance: (id: string, target?: 'start' | 'end') => void
+  invertFurnitureMotion: (id: string) => void
+  setFurnitureLocalProgress: (id: string, progress: number) => void
+
+  // v08: Sequence Reordering & CSV Resorting
+  reorderSequenceRows: (fromIndex: number, toIndex: number) => void
+  moveSequenceRowToExtreme: (stepId: number, position: 'start' | 'latest') => void
+  moveSequenceRowToStep: (stepId: number, targetStep: number) => void
 }
 
 // ─── Persistent Store (localStorage) ──────────────────────────────────────────
@@ -400,6 +415,15 @@ export const useAppStore = create<AppStore>()(
         dropGhostPos: null,
         setDropGhostPos: (pos) => set({ dropGhostPos: pos }),
         placeCatalogItemAt: (item, x, y) => {
+          const { room } = get()
+          const door = room.doors[0]
+          const doorStart = door?.offsetAlongWall ?? 160
+          const doorWidth = door?.widthCm ?? 180
+          const corridor = room.corridors[0]
+          const corridorLen = corridor?.lengthCm ?? 140
+          const entranceX = Math.round(doorStart + doorWidth / 2)
+          const entranceY = Math.round(-corridorLen)
+
           const newId = `item-${Date.now()}-${Math.floor(Math.random() * 1000)}`
           const newItem: FurnitureItem = {
             ...item,
@@ -409,6 +433,12 @@ export const useAppStore = create<AppStore>()(
             visible: true,
             color: item.color || nextColor(),
             components: item.components ? JSON.parse(JSON.stringify(item.components)) : [],
+            placementMode: 'inserting',
+            startPosition: { x: entranceX, y: entranceY },
+            startRotation: 0,
+            endPosition: { x: Math.round(x), y: Math.round(y) },
+            endRotation: 0,
+            localProgress: 1.0,
           }
 
           const { autoFillCSVOnDrop, sequenceRows } = get()
@@ -419,15 +449,15 @@ export const useAppStore = create<AppStore>()(
               step_id: nextStepId,
               object_id: newItem.id,
               object_name: newItem.name,
-              start_pos_x: Math.round(x),
-              start_pos_y: Math.round(y),
+              start_pos_x: entranceX,
+              start_pos_y: entranceY,
               start_rot: 0,
               end_pos_x: Math.round(x),
               end_pos_y: Math.round(y),
               end_rot: 0,
               duration_s: 1.5,
               easing: 'ease-in-out',
-              notes: 'Placed via catalog drag',
+              notes: 'Mode: inserting',
             }
             nextRows = [...sequenceRows, newSeqRow]
           }
@@ -440,6 +470,250 @@ export const useAppStore = create<AppStore>()(
             draggedCatalogItem: null,
             dropGhostPos: null,
           }))
+        },
+
+        // v08: Transform Triad & Placement Modes
+        selectedTransformTarget: 'end',
+        setSelectedTransformTarget: (t) => set({ selectedTransformTarget: t }),
+
+        setFurniturePlacementMode: (id, mode) => {
+          const { room, furniture, sequenceRows } = get()
+          const door = room.doors[0]
+          const doorStart = door?.offsetAlongWall ?? 160
+          const doorWidth = door?.widthCm ?? 180
+          const corridor = room.corridors[0]
+          const corridorLen = corridor?.lengthCm ?? 140
+          const entranceX = Math.round(doorStart + doorWidth / 2)
+          const entranceY = Math.round(-corridorLen)
+
+          const item = furniture.find(f => f.id === id)
+          if (!item) return
+
+          const currentX = item.position?.x ?? 100
+          const currentY = item.position?.y ?? 100
+          const currentRot = item.rotation ?? 0
+
+          let startPos = item.startPosition ?? { x: currentX, y: currentY }
+          let startRot = item.startRotation ?? currentRot
+          let endPos = item.endPosition ?? { x: currentX, y: currentY }
+          let endRot = item.endRotation ?? currentRot
+
+          if (mode === 'static') {
+            startPos = { x: currentX, y: currentY }
+            startRot = currentRot
+            endPos = { x: currentX, y: currentY }
+            endRot = currentRot
+          } else if (mode === 'inserting') {
+            startPos = { x: entranceX, y: entranceY }
+            startRot = 0
+            endPos = { x: currentX, y: currentY }
+            endRot = currentRot
+          } else if (mode === 'packing') {
+            startPos = { x: currentX, y: currentY }
+            startRot = currentRot
+            endPos = { x: entranceX, y: entranceY }
+            endRot = 0
+          }
+
+          // Sync matching sequenceRows
+          const nextRows = sequenceRows.map(r => {
+            if (r.object_id === id) {
+              return {
+                ...r,
+                start_pos_x: startPos.x,
+                start_pos_y: startPos.y,
+                start_rot: startRot,
+                end_pos_x: endPos.x,
+                end_pos_y: endPos.y,
+                end_rot: endRot,
+                notes: `Mode: ${mode}`,
+              }
+            }
+            return r
+          })
+
+          set((s) => ({
+            furniture: s.furniture.map(f => f.id === id ? {
+              ...f,
+              placementMode: mode,
+              startPosition: startPos,
+              startRotation: startRot,
+              endPosition: endPos,
+              endRotation: endRot,
+            } : f),
+            sequenceRows: nextRows,
+          }))
+        },
+
+        updateFurnitureTransformTarget: (id, target, patch) => {
+          const { furniture, sequenceRows } = get()
+          const item = furniture.find(f => f.id === id)
+          if (!item) return
+
+          const updatedFurniture = furniture.map(f => {
+            if (f.id !== id) return f
+            const updated = { ...f }
+            if (target === 'end') {
+              const newEnd = { ...(f.endPosition ?? f.position ?? { x: 0, y: 0 }) }
+              if (patch.x !== undefined) newEnd.x = patch.x
+              if (patch.y !== undefined) newEnd.y = patch.y
+              updated.endPosition = newEnd
+              if (patch.rotation !== undefined) updated.endRotation = patch.rotation
+              updated.position = { ...newEnd }
+              if (patch.rotation !== undefined) updated.rotation = patch.rotation
+            } else if (target === 'start') {
+              const newStart = { ...(f.startPosition ?? f.position ?? { x: 0, y: 0 }) }
+              if (patch.x !== undefined) newStart.x = patch.x
+              if (patch.y !== undefined) newStart.y = patch.y
+              updated.startPosition = newStart
+              if (patch.rotation !== undefined) updated.startRotation = patch.rotation
+            } else if (target === 'current') {
+              const newPos = { ...(f.position ?? { x: 0, y: 0 }) }
+              if (patch.x !== undefined) newPos.x = patch.x
+              if (patch.y !== undefined) newPos.y = patch.y
+              updated.position = newPos
+              if (patch.rotation !== undefined) updated.rotation = patch.rotation
+              if (f.placementMode === 'static') {
+                updated.startPosition = { ...newPos }
+                updated.endPosition = { ...newPos }
+                if (patch.rotation !== undefined) {
+                  updated.startRotation = patch.rotation
+                  updated.endRotation = patch.rotation
+                }
+              }
+            }
+            return updated
+          })
+
+          // Sync matching sequenceRows
+          const targetItem = updatedFurniture.find(f => f.id === id)
+          const nextRows = sequenceRows.map(r => {
+            if (r.object_id === id && targetItem) {
+              return {
+                ...r,
+                start_pos_x: targetItem.startPosition?.x ?? r.start_pos_x,
+                start_pos_y: targetItem.startPosition?.y ?? r.start_pos_y,
+                start_rot: targetItem.startRotation ?? r.start_rot,
+                end_pos_x: targetItem.endPosition?.x ?? r.end_pos_x,
+                end_pos_y: targetItem.endPosition?.y ?? r.end_pos_y,
+                end_rot: targetItem.endRotation ?? r.end_rot,
+              }
+            }
+            return r
+          })
+
+          set({ furniture: updatedFurniture, sequenceRows: nextRows })
+        },
+
+        snapFurnitureToEntrance: (id, target = 'start') => {
+          const { room } = get()
+          const door = room.doors[0]
+          const doorStart = door?.offsetAlongWall ?? 160
+          const doorWidth = door?.widthCm ?? 180
+          const corridor = room.corridors[0]
+          const corridorLen = corridor?.lengthCm ?? 140
+          const entranceX = Math.round(doorStart + doorWidth / 2)
+          const entranceY = Math.round(-corridorLen)
+
+          get().updateFurnitureTransformTarget(id, target, { x: entranceX, y: entranceY, rotation: 0 })
+        },
+
+        invertFurnitureMotion: (id) => {
+          const { furniture, sequenceRows } = get()
+          const item = furniture.find(f => f.id === id)
+          if (!item) return
+
+          const oldStart = item.startPosition ?? item.position ?? { x: 0, y: 0 }
+          const oldStartRot = item.startRotation ?? item.rotation ?? 0
+          const oldEnd = item.endPosition ?? item.position ?? { x: 0, y: 0 }
+          const oldEndRot = item.endRotation ?? item.rotation ?? 0
+          const nextMode: PlacementMode = item.placementMode === 'inserting' ? 'packing' : 'inserting'
+
+          set((s) => ({
+            furniture: s.furniture.map(f => f.id === id ? {
+              ...f,
+              placementMode: nextMode,
+              startPosition: { ...oldEnd },
+              startRotation: oldEndRot,
+              endPosition: { ...oldStart },
+              endRotation: oldStartRot,
+            } : f),
+            sequenceRows: sequenceRows.map(r => r.object_id === id ? {
+              ...r,
+              start_pos_x: oldEnd.x,
+              start_pos_y: oldEnd.y,
+              start_rot: oldEndRot,
+              end_pos_x: oldStart.x,
+              end_pos_y: oldStart.y,
+              end_rot: oldStartRot,
+              notes: `Mode: ${nextMode}`,
+            } : r),
+          }))
+        },
+
+        setFurnitureLocalProgress: (id, progress) => {
+          set((s) => ({
+            furniture: s.furniture.map(f => {
+              if (f.id !== id) return f
+              const sPos = f.startPosition ?? f.position ?? { x: 0, y: 0 }
+              const ePos = f.endPosition ?? f.position ?? { x: 0, y: 0 }
+              const sRot = f.startRotation ?? f.rotation ?? 0
+              const eRot = f.endRotation ?? f.rotation ?? 0
+              const p = Math.max(0, Math.min(1, progress))
+
+              const curX = Math.round(sPos.x + (ePos.x - sPos.x) * p)
+              const curY = Math.round(sPos.y + (ePos.y - sPos.y) * p)
+              const curRot = Math.round(sRot + (eRot - sRot) * p)
+
+              return {
+                ...f,
+                localProgress: p,
+                position: { x: curX, y: curY },
+                rotation: curRot,
+              }
+            }),
+          }))
+        },
+
+        // v08: Sequence Reordering & CSV Resorting
+        reorderSequenceRows: (fromIndex, toIndex) => {
+          set((s) => {
+            const rows = [...s.sequenceRows]
+            if (fromIndex < 0 || fromIndex >= rows.length || toIndex < 0 || toIndex >= rows.length) return {}
+            const [moved] = rows.splice(fromIndex, 1)
+            rows.splice(toIndex, 0, moved)
+            const reindexed = rows.map((r, i) => ({ ...r, step_id: i + 1 }))
+            return { sequenceRows: reindexed }
+          })
+        },
+
+        moveSequenceRowToExtreme: (stepId, position) => {
+          set((s) => {
+            const rows = [...s.sequenceRows]
+            const idx = rows.findIndex(r => r.step_id === stepId)
+            if (idx === -1) return {}
+            const [moved] = rows.splice(idx, 1)
+            if (position === 'start') {
+              rows.unshift(moved)
+            } else {
+              rows.push(moved)
+            }
+            const reindexed = rows.map((r, i) => ({ ...r, step_id: i + 1 }))
+            return { sequenceRows: reindexed }
+          })
+        },
+
+        moveSequenceRowToStep: (stepId, targetStep) => {
+          set((s) => {
+            const rows = [...s.sequenceRows]
+            const idx = rows.findIndex(r => r.step_id === stepId)
+            if (idx === -1) return {}
+            const [moved] = rows.splice(idx, 1)
+            const targetIdx = Math.max(0, Math.min(rows.length, targetStep - 1))
+            rows.splice(targetIdx, 0, moved)
+            const reindexed = rows.map((r, i) => ({ ...r, step_id: i + 1 }))
+            return { sequenceRows: reindexed }
+          })
         },
       }),
       { limit: 50 }

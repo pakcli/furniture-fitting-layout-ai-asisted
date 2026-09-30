@@ -16,6 +16,7 @@ export function CatalogHeader() {
     setAutoFillCSVOnDrop,
     catalogPanelHeight,
     setCatalogPanelHeight,
+    playbackPlaying,
   } = useAppStore()
 
   const breadcrumbs = getFolderBreadcrumb(catalogSelectedFolder)
@@ -34,6 +35,11 @@ export function CatalogHeader() {
       {/* Left: Breadcrumbs */}
       <div className="catalog-breadcrumb-bar">
         <span className="catalog-panel-title">Project Catalog</span>
+        {playbackPlaying && (
+          <span style={{ fontSize: 10, background: 'rgba(234, 179, 8, 0.2)', color: 'var(--yellow)', padding: '1px 6px', borderRadius: 4, fontWeight: 700, marginLeft: 4 }}>
+            🔒 Playing
+          </span>
+        )}
         <span className="breadcrumb-divider">|</span>
         <div className="breadcrumbs-trail">
           {breadcrumbs.map((crumb, idx) => (
