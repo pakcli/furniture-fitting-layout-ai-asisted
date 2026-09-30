@@ -371,40 +371,44 @@ function BabylonCanvas() {
     }
   }
 
-  // Animation loop for smooth playback
+  // Animation loop for smooth playback (runs uninterrupted while playing)
   useEffect(() => {
     let animId: number
     let lastTime = performance.now()
 
-    if (playbackPlaying && plan && plan.steps.length > 0) {
-      const loop = (now: number) => {
-        const dt = (now - lastTime) / 1000
-        lastTime = now
+    if (!playbackPlaying || !plan || plan.steps.length === 0) return
 
-        const stepSpeed = 0.9 // units per second
-        const newProgress = playbackProgress + dt * stepSpeed
+    const loop = (now: number) => {
+      const dt = Math.min((now - lastTime) / 1000, 0.05) // clamp dt to prevent jumps
+      lastTime = now
 
-        if (newProgress >= 1.0) {
-          if (playbackStep < plan.steps.length - 1) {
-            setPlaybackStep(playbackStep + 1)
-            setPlaybackProgress(0.0)
-          } else {
-            setPlaybackProgress(1.0)
-            setPlaybackPlaying(false)
-          }
+      const stepSpeed = 0.85 // progress units per second
+      const currentP = useAppStore.getState().playbackProgress
+      const currentS = useAppStore.getState().playbackStep
+      const totalSteps = plan.steps.length
+
+      const nextP = currentP + dt * stepSpeed
+
+      if (nextP >= 1.0) {
+        if (currentS < totalSteps - 1) {
+          useAppStore.setState({ playbackStep: currentS + 1, playbackProgress: 0.0 })
         } else {
-          setPlaybackProgress(newProgress)
+          useAppStore.setState({ playbackProgress: 1.0, playbackPlaying: false })
+          return
         }
-
-        animId = requestAnimationFrame(loop)
+      } else {
+        useAppStore.setState({ playbackProgress: nextP })
       }
+
       animId = requestAnimationFrame(loop)
     }
+
+    animId = requestAnimationFrame(loop)
 
     return () => {
       if (animId) cancelAnimationFrame(animId)
     }
-  }, [playbackPlaying, playbackStep, playbackProgress, plan])
+  }, [playbackPlaying, plan])
 
   // Initialize Babylon Scene & Camera
   useEffect(() => {
@@ -614,10 +618,11 @@ function BabylonCanvas() {
       let rotY = ((f.rotation ?? 0) * Math.PI) / 180
       let meshAlpha = 1.0
 
-      // If active item in simulation, interpolate along its path
+      // If active item in simulation, place at its current trajectory position
       if (plan && planIdx === playbackStep && currentStep && currentStep.pathNodes && currentStep.pathNodes.length > 0) {
         const pNodes = currentStep.pathNodes
-        const floatIdx = playbackProgress * (pNodes.length - 1)
+        const curProgress = useAppStore.getState().playbackProgress
+        const floatIdx = Math.max(0, Math.min(curProgress * (pNodes.length - 1), pNodes.length - 1))
         const baseIdx = Math.min(Math.floor(floatIdx), pNodes.length - 1)
         const nextIdx = Math.min(baseIdx + 1, pNodes.length - 1)
         const alpha = floatIdx - baseIdx
@@ -627,7 +632,11 @@ function BabylonCanvas() {
 
         const curX = n1.x + (n2.x - n1.x) * alpha
         const curY = n1.y + (n2.y - n1.y) * alpha
-        const curRot = n1.rot + (n2.rot - n1.rot) * alpha
+        let r1 = n1.rot, r2 = n2.rot
+        let dRot = r2 - r1
+        if (dRot > 180) dRot -= 360
+        if (dRot < -180) dRot += 360
+        const curRot = r1 + dRot * alpha
 
         posX = (curX + f.assembled.w / 2) * SCALE
         posZ = (curY + f.assembled.d / 2) * SCALE
@@ -700,7 +709,41 @@ function BabylonCanvas() {
         cz.material = czMat
       }
     }
-  }, [furniture, room, display, selectedId, theme, plan, playbackStep, playbackProgress])
+  }, [furniture, room, display, selectedId, theme, plan, playbackStep])
+
+  // High-performance smooth transform update for active furniture item (NO mesh disposal/recreation!)
+  useEffect(() => {
+    const scene = sceneRef
+    if (!scene || !plan) return
+    const currentStep = plan.steps[playbackStep]
+    if (!currentStep || !currentStep.pathNodes || currentStep.pathNodes.length === 0) return
+
+    const activeMesh = scene.getMeshByName(`furn-${currentStep.furnitureId}`) as Mesh
+    const f = furniture.find(item => item.id === currentStep.furnitureId)
+    if (!activeMesh || !f) return
+
+    const pNodes = currentStep.pathNodes
+    const floatIdx = Math.max(0, Math.min(playbackProgress * (pNodes.length - 1), pNodes.length - 1))
+    const baseIdx = Math.min(Math.floor(floatIdx), pNodes.length - 1)
+    const nextIdx = Math.min(baseIdx + 1, pNodes.length - 1)
+    const alpha = floatIdx - baseIdx
+
+    const n1 = pNodes[baseIdx]
+    const n2 = pNodes[nextIdx]
+
+    const curX = n1.x + (n2.x - n1.x) * alpha
+    const curY = n1.y + (n2.y - n1.y) * alpha
+    let r1 = n1.rot, r2 = n2.rot
+    let dRot = r2 - r1
+    if (dRot > 180) dRot -= 360
+    if (dRot < -180) dRot += 360
+    const curRot = r1 + dRot * alpha
+
+    activeMesh.position.x = (curX + f.assembled.w / 2) * SCALE
+    activeMesh.position.z = (curY + f.assembled.d / 2) * SCALE
+    activeMesh.position.y = (f.assembled.h / 2) * SCALE
+    activeMesh.rotation.y = (curRot * Math.PI) / 180
+  }, [playbackProgress, playbackStep, plan, furniture])
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
