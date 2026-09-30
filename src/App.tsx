@@ -5,6 +5,8 @@ import { CatalogView } from '@/components/CatalogView'
 import { EditorView } from '@/components/EditorView'
 import { HierarchyView } from '@/components/HierarchyView'
 import { SimulationView } from '@/components/SimulationView'
+import { ProjectSelector } from '@/components/ProjectSelector'
+import { ToastNotification } from '@/components/ToastNotification'
 import '@/index.css'
 
 type Tab = 'catalog' | 'editor' | 'hierarchy' | 'simulation'
@@ -55,6 +57,8 @@ export default function App() {
         <div className="topbar-left">
           <span style={{ fontSize: 18 }}>📦</span>
           <span className="topbar-title">Pack &amp; Place</span>
+          <span className="topbar-divider">|</span>
+          <ProjectSelector />
         </div>
         <div className="topbar-right">
           <ThemeToggle />
@@ -84,6 +88,9 @@ export default function App() {
 
       {/* Status bar */}
       <StatusBar />
+
+      {/* Floating Toast Notification (v09) */}
+      <ToastNotification />
     </div>
   )
 }

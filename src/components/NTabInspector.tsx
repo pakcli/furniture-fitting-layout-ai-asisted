@@ -12,14 +12,28 @@ const TABS: { id: InspectorTab; label: string; icon: string }[] = [
 ]
 
 function RoomTab() {
-  const { room, setRoom, selectRoomPreset } = useAppStore()
+  const { room, setRoom, selectRoomPreset, activeProjectId, projects } = useAppStore()
+  const activeProj = projects.find(p => p.id === activeProjectId)
+  const isCustom = activeProj && !activeProj.isSample
+
+  const handlePresetChange = (presetId: string) => {
+    if (presetId === room.id) return
+    if (isCustom) {
+      const confirmChange = window.confirm(
+        `You are in custom project "${activeProj.name}".\n\nClick OK to switch to this preset layout, or Cancel to stay in your project.`
+      )
+      if (!confirmChange) return
+    }
+    selectRoomPreset(presetId)
+  }
+
   return (
     <div className="ntab-content">
       <div className="panel-section">
         <div className="section-title">Room Preset</div>
         <select
           value={room.id}
-          onChange={e => selectRoomPreset(e.target.value)}
+          onChange={e => handlePresetChange(e.target.value)}
           style={{ width:'100%', padding:'5px 8px', fontSize:12, fontWeight:600,
             borderRadius:5, background:'var(--surface2)', color:'var(--text)', border:'1px solid var(--border)' }}
         >

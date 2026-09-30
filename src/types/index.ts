@@ -186,3 +186,29 @@ export interface DisplaySettings {
   showGhostTrail: boolean
   viewMode: '3d' | '2d'
 }
+
+// ─── Multi-Project Management (v09) ──────────────────────────────────────────
+
+export interface Project {
+  id: string
+  name: string
+  isSample: boolean
+  samplePresetId?: string
+  createdAt: number
+  updatedAt: number
+  room: Room
+  furniture: FurnitureItem[]
+  sequenceRows: SequenceStep[]
+  plan: SolverPlan | null
+}
+
+export interface ProjectMetadata {
+  id: string
+  name: string
+  isSample: boolean
+  updatedAt: number
+  itemCount: number
+  totalDurationS: number
+  roomDimensions: string
+}
+

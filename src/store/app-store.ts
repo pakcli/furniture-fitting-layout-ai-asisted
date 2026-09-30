@@ -6,31 +6,22 @@ import type {
   Theme, CatalogMode, CatalogLayout, DisplaySettings,
   SequenceStep, InspectorTab,
   PlacementMode, TransformTarget,
+  Project, ProjectMetadata,
 } from '@/types'
 import {
   MASTER_BEDROOM_ROOM,
   COMPACT_STUDIO_ROOM,
   ROOM_PRESETS,
   BEDROOM_PRESETS,
+  BEDROOM_SEQUENCE_ROWS,
+  BEDROOM_PLAN,
+  createFactorySampleProjects,
   makePresets,
 } from '@/data/presets'
 
 // ─── Default values ───────────────────────────────────────────────────────────
 
-const DEFAULT_ROOM: Room = {
-  id: 'room-master-bedroom',
-  name: 'Master Bedroom & Hallway',
-  walls: [
-    { x1: 0, y1: 0, x2: 500, y2: 0 },
-    { x1: 500, y1: 0, x2: 500, y2: 380 },
-    { x1: 500, y1: 380, x2: 0, y2: 380 },
-    { x1: 0, y1: 380, x2: 0, y2: 0 },
-  ],
-  doors: [{ id: 'door-1', wallIndex: 0, offsetAlongWall: 160, widthCm: 180, heightCm: 210 }],
-  corridors: [{ id: 'corridor-entry', widthCm: 180, lengthCm: 140, turns: [] }],
-  ceilingHeightCm: 260,
-  walkwayMinCm: 60,
-}
+const DEFAULT_ROOM: Room = MASTER_BEDROOM_ROOM
 
 const DEFAULT_DISPLAY: DisplaySettings = {
   showBoundingBox: true,
@@ -40,9 +31,9 @@ const DEFAULT_DISPLAY: DisplaySettings = {
   clearanceZoneColor: '#eab308',
   clearanceZoneStyle: 'dashed',
   materialMode: 'matte',
-  fallbackColor: '#cbd5e1',
+  fallbackColor: '#94a3b8',
   showFragileFaces: true,
-  fragileFaceColor: '#06b6d4',
+  fragileFaceColor: '#ef4444',
   collisionColor: '#ef4444',
   fragileCollisionColor: '#f97316',
   showFloorShadow: true,
@@ -50,54 +41,65 @@ const DEFAULT_DISPLAY: DisplaySettings = {
   viewMode: '3d',
 }
 
-// ─── Pastel auto-color pool ───────────────────────────────────────────────────
-
-const PASTEL_POOL = [
-  '#a8d8ea', '#aa96da', '#fcbad3', '#ffffd2', '#b5ead7',
-  '#c7ceea', '#ffdac1', '#e2f0cb', '#b5b9ff', '#ffb7b2',
+const PASTEL_COLORS = [
+  '#fca5a5', '#fdba74', '#fcd34d', '#86efac',
+  '#6ee7b7', '#67e8f9', '#93c5fd', '#c4b5fd',
+  '#f472b6', '#cbd5e1',
 ]
-let colorIndex = 0
-export const nextColor = () => PASTEL_POOL[colorIndex++ % PASTEL_POOL.length]
+let colorIdx = 0
+export const nextColor = () => PASTEL_COLORS[colorIdx++ % PASTEL_COLORS.length]
 
-// ─── Store interface ──────────────────────────────────────────────────────────
+// ─── Store Interface ──────────────────────────────────────────────────────────
 
-interface AppStore {
-  // Environment
+export interface AppStore {
+  // v09: Multi-Project Management & Copy-On-Write
+  projects: Project[]
+  activeProjectId: string
+  autoSaveStatus: 'saved' | 'saving'
+  toastMessage: string | null
+  showToast: (msg: string) => void
+  selectProject: (projectId: string) => void
+  createBlankProject: (name?: string) => string
+  duplicateProject: (projectId: string) => string
+  renameProject: (projectId: string, newName: string) => void
+  deleteProject: (projectId: string) => void
+  resetSampleProject: (sampleId: string) => void
+  exportProjectJSON: (projectId: string) => void
+  importProjectJSON: (jsonString: string) => string | null
+  clearAllCustomProjects: () => void
+  ensureWritableProject: () => string
+
+  // Active Project Content
   room: Room
   setRoom: (r: Room) => void
   selectRoomPreset: (presetId: string) => void
 
-  // Furniture catalog
   furniture: FurnitureItem[]
-  setFurniture: (f: FurnitureItem[]) => void
+  setFurniture: (items: FurnitureItem[]) => void
   addFurniture: (f: FurnitureItem) => void
   updateFurniture: (id: string, patch: Partial<FurnitureItem>) => void
   removeFurniture: (id: string) => void
   setFurnitureVisible: (id: string, visible: boolean) => void
   resetToPresets: () => void
 
-  // Selection (3D editor)
   selectedId: string | null
   setSelectedId: (id: string | null) => void
 
-  // Solver
   plan: SolverPlan | null
   solverRunning: boolean
   setPlan: (p: SolverPlan | null) => void
   setSolverRunning: (v: boolean) => void
 
-  // Simulation
   playbackStep: number
   playbackPlaying: boolean
-  playbackProgress: number // 0.0 to 1.0 along active step path
+  playbackProgress: number // 0.0 to 1.0 within current step
   setPlaybackStep: (n: number) => void
   setPlaybackPlaying: (v: boolean) => void
   setPlaybackProgress: (p: number) => void
   currentStep: () => PlanStep | null
 
-  // UI state
   activeTab: 'catalog' | 'editor' | 'hierarchy' | 'simulation'
-  setActiveTab: (t: AppStore['activeTab']) => void
+  setActiveTab: (t: 'catalog' | 'editor' | 'hierarchy' | 'simulation') => void
   catalogMode: CatalogMode
   setCatalogMode: (m: CatalogMode) => void
   catalogLayout: CatalogLayout
@@ -107,11 +109,9 @@ interface AppStore {
   openSidebar: (id: string) => void
   closeSidebar: () => void
 
-  // Display
   display: DisplaySettings
   setDisplay: (patch: Partial<DisplaySettings>) => void
 
-  // Theme
   theme: Theme
   setTheme: (t: Theme) => void
 
@@ -126,6 +126,8 @@ interface AppStore {
   insertSequenceRow: (afterStepId?: number) => void
   deleteSequenceRow: (stepId: number) => void
   moveSequenceRow: (stepId: number, direction: 'up' | 'down') => void
+
+  // CSV Editor Panel State
   isCSVEditorOpen: boolean
   setCSVEditorOpen: (v: boolean) => void
   liveSyncEnabled: boolean
@@ -135,7 +137,7 @@ interface AppStore {
   exportSequenceCSV: () => void
   copySequencePrompt: () => void
 
-  // Catalog Explorer Panel (Unity style) & Drag Placement
+  // Catalog Explorer Panel (Unity style)
   catalogPanelVisible: boolean
   setCatalogPanelVisible: (v: boolean) => void
   catalogPanelHeight: number
@@ -175,6 +177,43 @@ interface AppStore {
   moveSequenceRowToStep: (stepId: number, targetStep: number) => void
 }
 
+// ─── Helpers: Copy-on-Write (COW) Auto-Forking ───────────────────────────────
+
+function checkAndForkSample(
+  projects: Project[],
+  activeProjectId: string,
+  state: { room: Room; furniture: FurnitureItem[]; sequenceRows: SequenceStep[]; plan: SolverPlan | null }
+): { projects: Project[]; activeProjectId: string; didFork: boolean; forkedName?: string } {
+  const currentProj = projects.find(p => p.id === activeProjectId)
+  if (!currentProj || !currentProj.isSample) {
+    return { projects, activeProjectId, didFork: false }
+  }
+
+  const customCount = projects.filter(p => !p.isSample).length + 1
+  const newId = `project-custom-${Date.now()}`
+  const newName = `${currentProj.name} (Custom ${customCount})`
+
+  const forkedProject: Project = {
+    id: newId,
+    name: newName,
+    isSample: false,
+    samplePresetId: currentProj.samplePresetId,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    room: JSON.parse(JSON.stringify(state.room)),
+    furniture: JSON.parse(JSON.stringify(state.furniture)),
+    sequenceRows: JSON.parse(JSON.stringify(state.sequenceRows)),
+    plan: state.plan ? JSON.parse(JSON.stringify(state.plan)) : null,
+  }
+
+  return {
+    projects: [...projects, forkedProject],
+    activeProjectId: newId,
+    didFork: true,
+    forkedName: newName,
+  }
+}
+
 // ─── Persistent Store (localStorage) ──────────────────────────────────────────
 
 const memoryFallback = {
@@ -191,59 +230,397 @@ const getBrowserStorage = () => {
   return memoryFallback
 }
 
+const initialProjects = createFactorySampleProjects()
+const defaultActiveProject = initialProjects[0]
+
 export const useAppStore = create<AppStore>()(
   persist(
     temporal(
       (set, get) => ({
-        room: MASTER_BEDROOM_ROOM,
-        setRoom: (r) => set({ room: r }),
-        selectRoomPreset: (presetId) => {
-          const target = ROOM_PRESETS.find(p => p.id === presetId) ?? ROOM_PRESETS[0]
+        // Multi-Project State (v09)
+        projects: initialProjects,
+        activeProjectId: defaultActiveProject.id,
+        autoSaveStatus: 'saved',
+        toastMessage: null,
+
+        showToast: (msg: string) => {
+          set({ toastMessage: msg })
+          setTimeout(() => {
+            if (get().toastMessage === msg) {
+              set({ toastMessage: null })
+            }
+          }, 3500)
+        },
+
+        ensureWritableProject: () => {
+          const s = get()
+          const cow = checkAndForkSample(s.projects, s.activeProjectId, s)
+          if (cow.didFork) {
+            set({
+              projects: cow.projects,
+              activeProjectId: cow.activeProjectId,
+            })
+            s.showToast(`✨ Forked to "${cow.forkedName}" (Original sample preserved)`)
+          }
+          return cow.activeProjectId
+        },
+
+        selectProject: (projectId: string) => {
+          const target = get().projects.find(p => p.id === projectId)
+          if (!target) return
           set({
-            room: target.room,
-            furniture: makePresets(target.id),
+            activeProjectId: target.id,
+            room: JSON.parse(JSON.stringify(target.room)),
+            furniture: JSON.parse(JSON.stringify(target.furniture)),
+            sequenceRows: JSON.parse(JSON.stringify(target.sequenceRows)),
+            plan: target.plan ? JSON.parse(JSON.stringify(target.plan)) : null,
+            playbackStep: 0,
+            playbackProgress: 1.0,
+            playbackPlaying: false,
+            selectedId: null,
+          })
+          get().showToast(`📁 Loaded project: "${target.name}"`)
+        },
+
+        createBlankProject: (name = 'New Project') => {
+          const newId = `project-${Date.now()}`
+          const newProj: Project = {
+            id: newId,
+            name,
+            isSample: false,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            room: JSON.parse(JSON.stringify(MASTER_BEDROOM_ROOM)),
+            furniture: [],
+            sequenceRows: [],
+            plan: null,
+          }
+          set((s) => ({
+            projects: [...s.projects, newProj],
+            activeProjectId: newId,
+            room: newProj.room,
+            furniture: [],
+            sequenceRows: [],
             plan: null,
             playbackStep: 0,
             playbackProgress: 1.0,
             playbackPlaying: false,
             selectedId: null,
+          }))
+          get().showToast(`➕ Created "${name}"`)
+          return newId
+        },
+
+        duplicateProject: (projectId: string) => {
+          const source = get().projects.find(p => p.id === projectId)
+          if (!source) return ''
+          const newId = `project-${Date.now()}`
+          const newName = `${source.name} (Copy)`
+          const copy: Project = {
+            ...JSON.parse(JSON.stringify(source)),
+            id: newId,
+            name: newName,
+            isSample: false,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          }
+          set((s) => ({
+            projects: [...s.projects, copy],
+            activeProjectId: newId,
+            room: copy.room,
+            furniture: copy.furniture,
+            sequenceRows: copy.sequenceRows,
+            plan: copy.plan,
+            playbackStep: 0,
+            playbackProgress: 1.0,
+            playbackPlaying: false,
+            selectedId: null,
+          }))
+          get().showToast(`📋 Duplicated to "${newName}"`)
+          return newId
+        },
+
+        renameProject: (projectId: string, newName: string) => {
+          if (!newName.trim()) return
+          set((s) => ({
+            projects: s.projects.map(p =>
+              p.id === projectId ? { ...p, name: newName.trim(), updatedAt: Date.now() } : p
+            ),
+          }))
+          get().showToast(`✏️ Renamed project to "${newName.trim()}"`)
+        },
+
+        deleteProject: (projectId: string) => {
+          const { projects, activeProjectId } = get()
+          const target = projects.find(p => p.id === projectId)
+          if (!target || target.isSample) return
+
+          const remaining = projects.filter(p => p.id !== projectId)
+          let nextActive = activeProjectId
+          if (activeProjectId === projectId) {
+            nextActive = remaining[0]?.id ?? 'project-sample-bedroom'
+          }
+          const nextProj = remaining.find(p => p.id === nextActive) ?? remaining[0]
+
+          set({
+            projects: remaining,
+            activeProjectId: nextProj.id,
+            room: JSON.parse(JSON.stringify(nextProj.room)),
+            furniture: JSON.parse(JSON.stringify(nextProj.furniture)),
+            sequenceRows: JSON.parse(JSON.stringify(nextProj.sequenceRows)),
+            plan: nextProj.plan ? JSON.parse(JSON.stringify(nextProj.plan)) : null,
+            playbackStep: 0,
+            playbackProgress: 1.0,
+            playbackPlaying: false,
+            selectedId: null,
+          })
+          get().showToast(`🗑 Deleted "${target.name}"`)
+        },
+
+        resetSampleProject: (sampleId: string) => {
+          const factory = createFactorySampleProjects().find(p => p.id === sampleId)
+          if (!factory) return
+          set((s) => ({
+            projects: s.projects.map(p => p.id === sampleId ? JSON.parse(JSON.stringify(factory)) : p),
+            activeProjectId: sampleId,
+            room: JSON.parse(JSON.stringify(factory.room)),
+            furniture: JSON.parse(JSON.stringify(factory.furniture)),
+            sequenceRows: JSON.parse(JSON.stringify(factory.sequenceRows)),
+            plan: factory.plan ? JSON.parse(JSON.stringify(factory.plan)) : null,
+            playbackStep: 0,
+            playbackProgress: 1.0,
+            playbackPlaying: false,
+            selectedId: null,
+          }))
+          get().showToast(`↺ Reset "${factory.name}" to factory default`)
+        },
+
+        exportProjectJSON: (projectId: string) => {
+          const proj = get().projects.find(p => p.id === projectId)
+          if (!proj) return
+          const data = {
+            version: 1,
+            exportedAt: new Date().toISOString(),
+            project: proj,
+          }
+          const json = JSON.stringify(data, null, 2)
+          const blob = new Blob([json], { type: 'application/json' })
+          const url = URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = url
+          a.download = `${proj.name.replace(/[^a-zA-Z0-9_-]/g, '_')}_project.json`
+          a.click()
+          URL.revokeObjectURL(url)
+          get().showToast(`⬇ Exported "${proj.name}" to JSON`)
+        },
+
+        importProjectJSON: (jsonString: string) => {
+          try {
+            const parsed = JSON.parse(jsonString)
+            const proj: Project = parsed.project ?? parsed
+            if (!proj.room || !proj.furniture) {
+              get().showToast('❌ Invalid project file format')
+              return null
+            }
+            const newId = `project-imported-${Date.now()}`
+            const importedProj: Project = {
+              ...proj,
+              id: newId,
+              name: `${proj.name || 'Imported Project'} (Imported)`,
+              isSample: false,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            }
+            set((s) => ({
+              projects: [...s.projects, importedProj],
+              activeProjectId: newId,
+              room: JSON.parse(JSON.stringify(importedProj.room)),
+              furniture: JSON.parse(JSON.stringify(importedProj.furniture)),
+              sequenceRows: JSON.parse(JSON.stringify(importedProj.sequenceRows ?? [])),
+              plan: importedProj.plan ? JSON.parse(JSON.stringify(importedProj.plan)) : null,
+              playbackStep: 0,
+              playbackProgress: 1.0,
+              playbackPlaying: false,
+              selectedId: null,
+            }))
+            get().showToast(`📥 Successfully imported "${importedProj.name}"`)
+            return newId
+          } catch {
+            get().showToast('❌ Failed to parse JSON file')
+            return null
+          }
+        },
+
+        clearAllCustomProjects: () => {
+          const factory = createFactorySampleProjects()
+          set({
+            projects: factory,
+            activeProjectId: factory[0].id,
+            room: JSON.parse(JSON.stringify(factory[0].room)),
+            furniture: JSON.parse(JSON.stringify(factory[0].furniture)),
+            sequenceRows: JSON.parse(JSON.stringify(factory[0].sequenceRows)),
+            plan: factory[0].plan ? JSON.parse(JSON.stringify(factory[0].plan)) : null,
+            playbackStep: 0,
+            playbackProgress: 1.0,
+            playbackPlaying: false,
+            selectedId: null,
+          })
+          get().showToast('🗑 Cleared custom projects (Factory samples restored)')
+        },
+
+        // Active Project Content
+        room: defaultActiveProject.room,
+        setRoom: (r) => {
+          const s = get()
+          const cow = checkAndForkSample(s.projects, s.activeProjectId, { ...s, room: r })
+          const updatedProjects = cow.projects.map(p =>
+            p.id === cow.activeProjectId ? { ...p, updatedAt: Date.now(), room: r } : p
+          )
+          set({
+            projects: updatedProjects,
+            activeProjectId: cow.activeProjectId,
+            room: r,
+            toastMessage: cow.didFork ? `✨ Forked to "${cow.forkedName}"` : s.toastMessage,
           })
         },
 
-        // Initialize with Master Bedroom preset
-        furniture: makePresets('room-master-bedroom'),
-        setFurniture: (items) => set({ furniture: items }),
-        addFurniture: (f) => set((s) => ({ furniture: [...s.furniture, f] })),
-        updateFurniture: (id, patch) =>
-          set((s) => ({
-            furniture: s.furniture.map((f) => (f.id === id ? { ...f, ...patch } : f)),
-          })),
-        removeFurniture: (id) =>
-          set((s) => ({ furniture: s.furniture.filter((f) => f.id !== id) })),
-        setFurnitureVisible: (id, visible) =>
-          set((s) => ({
-            furniture: s.furniture.map((f) => (f.id === id ? { ...f, visible } : f)),
-          })),
-        resetToPresets: () => {
-          const currentRoomId = get().room.id
-          const target = ROOM_PRESETS.find(p => p.id === currentRoomId) ?? ROOM_PRESETS[0]
+        selectRoomPreset: (presetId: string) => {
+          const sampleProject = get().projects.find(p => p.isSample && p.samplePresetId === presetId)
+          if (sampleProject) {
+            get().selectProject(sampleProject.id)
+            return
+          }
+
+          const target = ROOM_PRESETS.find(p => p.id === presetId) ?? ROOM_PRESETS[0]
+          const s = get()
+          const cow = checkAndForkSample(s.projects, s.activeProjectId, s)
+          const updatedProjects = cow.projects.map(p =>
+            p.id === cow.activeProjectId ? {
+              ...p,
+              updatedAt: Date.now(),
+              room: target.room,
+              furniture: target.furniture,
+              sequenceRows: target.sequenceRows,
+              plan: target.plan,
+            } : p
+          )
           set({
-            furniture: makePresets(target.id),
+            projects: updatedProjects,
+            activeProjectId: cow.activeProjectId,
             room: target.room,
-            plan: null,
+            furniture: target.furniture,
+            sequenceRows: target.sequenceRows,
+            plan: target.plan,
             playbackStep: 0,
             playbackProgress: 1.0,
             playbackPlaying: false,
             selectedId: null,
+            toastMessage: cow.didFork ? `✨ Forked to "${cow.forkedName}"` : s.toastMessage,
           })
+        },
+
+        furniture: defaultActiveProject.furniture,
+        setFurniture: (items) => {
+          const s = get()
+          const cow = checkAndForkSample(s.projects, s.activeProjectId, { ...s, furniture: items })
+          const updatedProjects = cow.projects.map(p =>
+            p.id === cow.activeProjectId ? { ...p, updatedAt: Date.now(), furniture: items } : p
+          )
+          set({
+            projects: updatedProjects,
+            activeProjectId: cow.activeProjectId,
+            furniture: items,
+            toastMessage: cow.didFork ? `✨ Forked to "${cow.forkedName}"` : s.toastMessage,
+          })
+        },
+
+        addFurniture: (f) =>
+          set((s) => {
+            const cow = checkAndForkSample(s.projects, s.activeProjectId, s)
+            const nextFurniture = [...s.furniture, f]
+            const updatedProjects = cow.projects.map(p =>
+              p.id === cow.activeProjectId ? { ...p, updatedAt: Date.now(), furniture: nextFurniture } : p
+            )
+            return {
+              projects: updatedProjects,
+              activeProjectId: cow.activeProjectId,
+              furniture: nextFurniture,
+              toastMessage: cow.didFork ? `✨ Forked to "${cow.forkedName}"` : s.toastMessage,
+            }
+          }),
+
+        updateFurniture: (id, patch) =>
+          set((s) => {
+            const cow = checkAndForkSample(s.projects, s.activeProjectId, s)
+            const nextFurniture = s.furniture.map((f) => (f.id === id ? { ...f, ...patch } : f))
+            const updatedProjects = cow.projects.map(p =>
+              p.id === cow.activeProjectId ? { ...p, updatedAt: Date.now(), furniture: nextFurniture } : p
+            )
+            return {
+              projects: updatedProjects,
+              activeProjectId: cow.activeProjectId,
+              furniture: nextFurniture,
+              toastMessage: cow.didFork ? `✨ Forked to "${cow.forkedName}"` : s.toastMessage,
+            }
+          }),
+
+        removeFurniture: (id) =>
+          set((s) => {
+            const cow = checkAndForkSample(s.projects, s.activeProjectId, s)
+            const nextFurniture = s.furniture.filter((f) => f.id !== id)
+            const updatedProjects = cow.projects.map(p =>
+              p.id === cow.activeProjectId ? { ...p, updatedAt: Date.now(), furniture: nextFurniture } : p
+            )
+            return {
+              projects: updatedProjects,
+              activeProjectId: cow.activeProjectId,
+              furniture: nextFurniture,
+              selectedId: s.selectedId === id ? null : s.selectedId,
+              toastMessage: cow.didFork ? `✨ Forked to "${cow.forkedName}"` : s.toastMessage,
+            }
+          }),
+
+        setFurnitureVisible: (id, visible) =>
+          set((s) => {
+            const cow = checkAndForkSample(s.projects, s.activeProjectId, s)
+            const nextFurniture = s.furniture.map((f) => (f.id === id ? { ...f, visible } : f))
+            const updatedProjects = cow.projects.map(p =>
+              p.id === cow.activeProjectId ? { ...p, updatedAt: Date.now(), furniture: nextFurniture } : p
+            )
+            return {
+              projects: updatedProjects,
+              activeProjectId: cow.activeProjectId,
+              furniture: nextFurniture,
+              toastMessage: cow.didFork ? `✨ Forked to "${cow.forkedName}"` : s.toastMessage,
+            }
+          }),
+
+        resetToPresets: () => {
+          const { activeProjectId, resetSampleProject } = get()
+          if (activeProjectId.startsWith('project-sample-')) {
+            resetSampleProject(activeProjectId)
+          } else {
+            get().selectProject('project-sample-bedroom')
+          }
         },
 
         selectedId: null,
         setSelectedId: (id) => set({ selectedId: id }),
 
-        plan: null,
+        plan: defaultActiveProject.plan,
         solverRunning: false,
-        setPlan: (p) => set({ plan: p }),
+        setPlan: (p) => {
+          const s = get()
+          const cow = checkAndForkSample(s.projects, s.activeProjectId, { ...s, plan: p })
+          const updatedProjects = cow.projects.map(proj =>
+            proj.id === cow.activeProjectId ? { ...proj, updatedAt: Date.now(), plan: p } : proj
+          )
+          set({
+            projects: updatedProjects,
+            activeProjectId: cow.activeProjectId,
+            plan: p,
+          })
+        },
         setSolverRunning: (v) => set({ solverRunning: v }),
 
         playbackStep: 0,
@@ -280,17 +657,41 @@ export const useAppStore = create<AppStore>()(
         setInspectorTab: (t) => set({ inspectorTab: t }),
 
         // Sequence CSV Editor
-        sequenceRows: [],
-        setSequenceRows: (rows) => set({ sequenceRows: rows }),
+        sequenceRows: defaultActiveProject.sequenceRows,
+        setSequenceRows: (rows) => {
+          const s = get()
+          const cow = checkAndForkSample(s.projects, s.activeProjectId, { ...s, sequenceRows: rows })
+          const updatedProjects = cow.projects.map(p =>
+            p.id === cow.activeProjectId ? { ...p, updatedAt: Date.now(), sequenceRows: rows } : p
+          )
+          set({
+            projects: updatedProjects,
+            activeProjectId: cow.activeProjectId,
+            sequenceRows: rows,
+          })
+        },
+
         updateSequenceRow: (stepId, patch) =>
-          set((s) => ({
-            sequenceRows: s.sequenceRows.map((r) =>
+          set((s) => {
+            const cow = checkAndForkSample(s.projects, s.activeProjectId, s)
+            const nextRows = s.sequenceRows.map((r) =>
               r.step_id === stepId ? { ...r, ...patch } : r
-            ),
-            pendingChanges: s.liveSyncEnabled ? s.pendingChanges : s.pendingChanges + 1,
-          })),
+            )
+            const updatedProjects = cow.projects.map(p =>
+              p.id === cow.activeProjectId ? { ...p, updatedAt: Date.now(), sequenceRows: nextRows } : p
+            )
+            return {
+              projects: updatedProjects,
+              activeProjectId: cow.activeProjectId,
+              sequenceRows: nextRows,
+              pendingChanges: s.liveSyncEnabled ? s.pendingChanges : s.pendingChanges + 1,
+              toastMessage: cow.didFork ? `✨ Forked to "${cow.forkedName}"` : s.toastMessage,
+            }
+          }),
+
         insertSequenceRow: (afterStepId) =>
           set((s) => {
+            const cow = checkAndForkSample(s.projects, s.activeProjectId, s)
             const rows = s.sequenceRows
             const newId = rows.length > 0 ? Math.max(...rows.map(r => r.step_id)) + 1 : 1
             const newRow: SequenceStep = {
@@ -298,49 +699,96 @@ export const useAppStore = create<AppStore>()(
               object_id: '',
               object_name: '',
               start_pos_x: 0, start_pos_y: 0, start_rot: 0,
-              end_pos_x: 0, end_pos_y: 0, end_rot: 0,
-              duration_s: 1.0,
-              easing: 'ease-in-out',
-              notes: '',
+              end_pos_x: 100, end_pos_y: 100, end_rot: 0,
+              duration_s: 1.5, easing: 'ease-in-out',
+              notes: 'Manual step',
             }
-            if (afterStepId === undefined) {
-              return { sequenceRows: [...rows, newRow] }
+
+            let nextRows: SequenceStep[]
+            if (afterStepId !== undefined) {
+              const idx = rows.findIndex(r => r.step_id === afterStepId)
+              nextRows = [...rows.slice(0, idx + 1), newRow, ...rows.slice(idx + 1)]
+            } else {
+              nextRows = [...rows, newRow]
             }
-            const idx = rows.findIndex(r => r.step_id === afterStepId)
-            const next = [...rows]
-            next.splice(idx + 1, 0, newRow)
-            return { sequenceRows: next }
+
+            const reindexed = nextRows.map((r, i) => ({ ...r, step_id: i + 1 }))
+            const updatedProjects = cow.projects.map(p =>
+              p.id === cow.activeProjectId ? { ...p, updatedAt: Date.now(), sequenceRows: reindexed } : p
+            )
+            return {
+              projects: updatedProjects,
+              activeProjectId: cow.activeProjectId,
+              sequenceRows: reindexed,
+              pendingChanges: s.liveSyncEnabled ? s.pendingChanges : s.pendingChanges + 1,
+              toastMessage: cow.didFork ? `✨ Forked to "${cow.forkedName}"` : s.toastMessage,
+            }
           }),
+
         deleteSequenceRow: (stepId) =>
-          set((s) => ({ sequenceRows: s.sequenceRows.filter(r => r.step_id !== stepId) })),
+          set((s) => {
+            const cow = checkAndForkSample(s.projects, s.activeProjectId, s)
+            const rows = s.sequenceRows.filter(r => r.step_id !== stepId)
+            const reindexed = rows.map((r, i) => ({ ...r, step_id: i + 1 }))
+            const updatedProjects = cow.projects.map(p =>
+              p.id === cow.activeProjectId ? { ...p, updatedAt: Date.now(), sequenceRows: reindexed } : p
+            )
+            return {
+              projects: updatedProjects,
+              activeProjectId: cow.activeProjectId,
+              sequenceRows: reindexed,
+              pendingChanges: s.liveSyncEnabled ? s.pendingChanges : s.pendingChanges + 1,
+              toastMessage: cow.didFork ? `✨ Forked to "${cow.forkedName}"` : s.toastMessage,
+            }
+          }),
+
         moveSequenceRow: (stepId, direction) =>
           set((s) => {
+            const cow = checkAndForkSample(s.projects, s.activeProjectId, s)
             const rows = [...s.sequenceRows]
             const idx = rows.findIndex(r => r.step_id === stepId)
             if (idx === -1) return {}
-            const swapIdx = direction === 'up' ? idx - 1 : idx + 1
-            if (swapIdx < 0 || swapIdx >= rows.length) return {}
-            ;[rows[idx], rows[swapIdx]] = [rows[swapIdx], rows[idx]]
-            return { sequenceRows: rows }
+            const targetIdx = direction === 'up' ? idx - 1 : idx + 1
+            if (targetIdx < 0 || targetIdx >= rows.length) return {}
+            const temp = rows[idx]
+            rows[idx] = rows[targetIdx]
+            rows[targetIdx] = temp
+            const reindexed = rows.map((r, i) => ({ ...r, step_id: i + 1 }))
+            const updatedProjects = cow.projects.map(p =>
+              p.id === cow.activeProjectId ? { ...p, updatedAt: Date.now(), sequenceRows: reindexed } : p
+            )
+            return {
+              projects: updatedProjects,
+              activeProjectId: cow.activeProjectId,
+              sequenceRows: reindexed,
+              pendingChanges: s.liveSyncEnabled ? s.pendingChanges : s.pendingChanges + 1,
+              toastMessage: cow.didFork ? `✨ Forked to "${cow.forkedName}"` : s.toastMessage,
+            }
           }),
+
+        // CSV Editor Panel State
         isCSVEditorOpen: false,
         setCSVEditorOpen: (v) => set({ isCSVEditorOpen: v }),
-        liveSyncEnabled: false,
-        setLiveSyncEnabled: (v) => set({ liveSyncEnabled: v, pendingChanges: 0 }),
+        liveSyncEnabled: true,
+        setLiveSyncEnabled: (v) => set({ liveSyncEnabled: v }),
         pendingChanges: 0,
-        saveSequenceAnimation: () => set({ pendingChanges: 0 }),
+        saveSequenceAnimation: () => {
+          set({ pendingChanges: 0 })
+          get().showToast('💾 Sequence saved')
+        },
+
         exportSequenceCSV: () => {
           const { sequenceRows, room } = get()
           const header = 'step_id,object_id,object_name,start_pos_x,start_pos_y,start_rot,end_pos_x,end_pos_y,end_rot,duration_s,easing,notes'
           const rows = sequenceRows.map(r =>
-            [r.step_id, r.object_id, r.object_name, r.start_pos_x, r.start_pos_y, r.start_rot,
-             r.end_pos_x, r.end_pos_y, r.end_rot, r.duration_s, r.easing,
+            [r.step_id, r.object_id, `"${r.object_name.replace(/"/g, '""')}"`,
+             r.start_pos_x, r.start_pos_y, r.start_rot,
+             r.end_pos_x, r.end_pos_y, r.end_rot,
+             r.duration_s, r.easing,
              `"${r.notes.replace(/"/g, '""')}"`].join(',')
           )
           const csv = [header, ...rows].join('\n')
-          // Copy to clipboard
           navigator.clipboard?.writeText(csv).catch(() => {})
-          // Download file
           const ts = new Date().toISOString().slice(0, 16).replace(/[:-]/g, '').replace('T', '_')
           const filename = `sequence_${room.name.replace(/\s+/g, '_')}_${ts}.csv`
           const blob = new Blob([csv], { type: 'text/csv' })
@@ -348,7 +796,9 @@ export const useAppStore = create<AppStore>()(
           const a = document.createElement('a')
           a.href = url; a.download = filename; a.click()
           URL.revokeObjectURL(url)
+          get().showToast('⬇ Exported sequence CSV')
         },
+
         copySequencePrompt: () => {
           const { sequenceRows, room, furniture } = get()
           const header = 'step_id,object_id,object_name,start_pos_x,start_pos_y,start_rot,end_pos_x,end_pos_y,end_rot,duration_s,easing'
@@ -384,6 +834,7 @@ export const useAppStore = create<AppStore>()(
             csvFull,
           ].join('\n')
           navigator.clipboard?.writeText(prompt).catch(() => {})
+          get().showToast('📋 Copied AI Prompt to clipboard')
         },
 
         // Catalog Explorer Panel (Unity style) & Drag Placement
@@ -414,8 +865,11 @@ export const useAppStore = create<AppStore>()(
         setDraggedCatalogItem: (item) => set({ draggedCatalogItem: item }),
         dropGhostPos: null,
         setDropGhostPos: (pos) => set({ dropGhostPos: pos }),
+
         placeCatalogItemAt: (item, x, y) => {
-          const { room } = get()
+          const s = get()
+          const cow = checkAndForkSample(s.projects, s.activeProjectId, s)
+          const room = s.room
           const door = room.doors[0]
           const doorStart = door?.offsetAlongWall ?? 160
           const doorWidth = door?.widthCm ?? 180
@@ -441,7 +895,7 @@ export const useAppStore = create<AppStore>()(
             localProgress: 1.0,
           }
 
-          const { autoFillCSVOnDrop, sequenceRows } = get()
+          const { autoFillCSVOnDrop, sequenceRows } = s
           let nextRows = sequenceRows
           if (autoFillCSVOnDrop) {
             const nextStepId = sequenceRows.length > 0 ? Math.max(...sequenceRows.map(r => r.step_id)) + 1 : 1
@@ -462,14 +916,27 @@ export const useAppStore = create<AppStore>()(
             nextRows = [...sequenceRows, newSeqRow]
           }
 
-          set((s) => ({
-            furniture: [...s.furniture, newItem],
+          const nextFurniture = [...s.furniture, newItem]
+          const updatedProjects = cow.projects.map(p =>
+            p.id === cow.activeProjectId ? {
+              ...p,
+              updatedAt: Date.now(),
+              furniture: nextFurniture,
+              sequenceRows: nextRows,
+            } : p
+          )
+
+          set({
+            projects: updatedProjects,
+            activeProjectId: cow.activeProjectId,
+            furniture: nextFurniture,
             selectedId: newId,
             inspectorTab: 'object',
             sequenceRows: nextRows,
             draggedCatalogItem: null,
             dropGhostPos: null,
-          }))
+            toastMessage: cow.didFork ? `✨ Forked to "${cow.forkedName}"` : s.toastMessage,
+          })
         },
 
         // v08: Transform Triad & Placement Modes
@@ -477,7 +944,9 @@ export const useAppStore = create<AppStore>()(
         setSelectedTransformTarget: (t) => set({ selectedTransformTarget: t }),
 
         setFurniturePlacementMode: (id, mode) => {
-          const { room, furniture, sequenceRows } = get()
+          const s = get()
+          const cow = checkAndForkSample(s.projects, s.activeProjectId, s)
+          const { room, furniture, sequenceRows } = s
           const door = room.doors[0]
           const doorStart = door?.offsetAlongWall ?? 160
           const doorWidth = door?.widthCm ?? 180
@@ -515,7 +984,6 @@ export const useAppStore = create<AppStore>()(
             endRot = 0
           }
 
-          // Sync matching sequenceRows
           const nextRows = sequenceRows.map(r => {
             if (r.object_id === id) {
               return {
@@ -532,21 +1000,37 @@ export const useAppStore = create<AppStore>()(
             return r
           })
 
-          set((s) => ({
-            furniture: s.furniture.map(f => f.id === id ? {
-              ...f,
-              placementMode: mode,
-              startPosition: startPos,
-              startRotation: startRot,
-              endPosition: endPos,
-              endRotation: endRot,
-            } : f),
+          const nextFurniture = furniture.map(f => f.id === id ? {
+            ...f,
+            placementMode: mode,
+            startPosition: startPos,
+            startRotation: startRot,
+            endPosition: endPos,
+            endRotation: endRot,
+          } : f)
+
+          const updatedProjects = cow.projects.map(p =>
+            p.id === cow.activeProjectId ? {
+              ...p,
+              updatedAt: Date.now(),
+              furniture: nextFurniture,
+              sequenceRows: nextRows,
+            } : p
+          )
+
+          set({
+            projects: updatedProjects,
+            activeProjectId: cow.activeProjectId,
+            furniture: nextFurniture,
             sequenceRows: nextRows,
-          }))
+            toastMessage: cow.didFork ? `✨ Forked to "${cow.forkedName}"` : s.toastMessage,
+          })
         },
 
         updateFurnitureTransformTarget: (id, target, patch) => {
-          const { furniture, sequenceRows } = get()
+          const s = get()
+          const cow = checkAndForkSample(s.projects, s.activeProjectId, s)
+          const { furniture, sequenceRows } = s
           const item = furniture.find(f => f.id === id)
           if (!item) return
 
@@ -585,7 +1069,6 @@ export const useAppStore = create<AppStore>()(
             return updated
           })
 
-          // Sync matching sequenceRows
           const targetItem = updatedFurniture.find(f => f.id === id)
           const nextRows = sequenceRows.map(r => {
             if (r.object_id === id && targetItem) {
@@ -602,7 +1085,22 @@ export const useAppStore = create<AppStore>()(
             return r
           })
 
-          set({ furniture: updatedFurniture, sequenceRows: nextRows })
+          const updatedProjects = cow.projects.map(p =>
+            p.id === cow.activeProjectId ? {
+              ...p,
+              updatedAt: Date.now(),
+              furniture: updatedFurniture,
+              sequenceRows: nextRows,
+            } : p
+          )
+
+          set({
+            projects: updatedProjects,
+            activeProjectId: cow.activeProjectId,
+            furniture: updatedFurniture,
+            sequenceRows: nextRows,
+            toastMessage: cow.didFork ? `✨ Forked to "${cow.forkedName}"` : s.toastMessage,
+          })
         },
 
         snapFurnitureToEntrance: (id, target = 'start') => {
@@ -619,7 +1117,9 @@ export const useAppStore = create<AppStore>()(
         },
 
         invertFurnitureMotion: (id) => {
-          const { furniture, sequenceRows } = get()
+          const s = get()
+          const cow = checkAndForkSample(s.projects, s.activeProjectId, s)
+          const { furniture, sequenceRows } = s
           const item = furniture.find(f => f.id === id)
           if (!item) return
 
@@ -629,26 +1129,42 @@ export const useAppStore = create<AppStore>()(
           const oldEndRot = item.endRotation ?? item.rotation ?? 0
           const nextMode: PlacementMode = item.placementMode === 'inserting' ? 'packing' : 'inserting'
 
-          set((s) => ({
-            furniture: s.furniture.map(f => f.id === id ? {
-              ...f,
-              placementMode: nextMode,
-              startPosition: { ...oldEnd },
-              startRotation: oldEndRot,
-              endPosition: { ...oldStart },
-              endRotation: oldStartRot,
-            } : f),
-            sequenceRows: sequenceRows.map(r => r.object_id === id ? {
-              ...r,
-              start_pos_x: oldEnd.x,
-              start_pos_y: oldEnd.y,
-              start_rot: oldEndRot,
-              end_pos_x: oldStart.x,
-              end_pos_y: oldStart.y,
-              end_rot: oldStartRot,
-              notes: `Mode: ${nextMode}`,
-            } : r),
-          }))
+          const nextFurniture = furniture.map(f => f.id === id ? {
+            ...f,
+            placementMode: nextMode,
+            startPosition: { ...oldEnd },
+            startRotation: oldEndRot,
+            endPosition: { ...oldStart },
+            endRotation: oldStartRot,
+          } : f)
+
+          const nextRows = sequenceRows.map(r => r.object_id === id ? {
+            ...r,
+            start_pos_x: oldEnd.x,
+            start_pos_y: oldEnd.y,
+            start_rot: oldEndRot,
+            end_pos_x: oldStart.x,
+            end_pos_y: oldStart.y,
+            end_rot: oldStartRot,
+            notes: `Mode: ${nextMode}`,
+          } : r)
+
+          const updatedProjects = cow.projects.map(p =>
+            p.id === cow.activeProjectId ? {
+              ...p,
+              updatedAt: Date.now(),
+              furniture: nextFurniture,
+              sequenceRows: nextRows,
+            } : p
+          )
+
+          set({
+            projects: updatedProjects,
+            activeProjectId: cow.activeProjectId,
+            furniture: nextFurniture,
+            sequenceRows: nextRows,
+            toastMessage: cow.didFork ? `✨ Forked to "${cow.forkedName}"` : s.toastMessage,
+          })
         },
 
         setFurnitureLocalProgress: (id, progress) => {
@@ -677,65 +1193,108 @@ export const useAppStore = create<AppStore>()(
 
         // v08: Sequence Reordering & CSV Resorting
         reorderSequenceRows: (fromIndex, toIndex) => {
-          set((s) => {
-            const rows = [...s.sequenceRows]
-            if (fromIndex < 0 || fromIndex >= rows.length || toIndex < 0 || toIndex >= rows.length) return {}
-            const [moved] = rows.splice(fromIndex, 1)
-            rows.splice(toIndex, 0, moved)
-            const reindexed = rows.map((r, i) => ({ ...r, step_id: i + 1 }))
-            return { sequenceRows: reindexed }
+          const s = get()
+          const cow = checkAndForkSample(s.projects, s.activeProjectId, s)
+          const rows = [...s.sequenceRows]
+          if (fromIndex < 0 || fromIndex >= rows.length || toIndex < 0 || toIndex >= rows.length) return
+          const [moved] = rows.splice(fromIndex, 1)
+          rows.splice(toIndex, 0, moved)
+          const reindexed = rows.map((r, i) => ({ ...r, step_id: i + 1 }))
+
+          const updatedProjects = cow.projects.map(p =>
+            p.id === cow.activeProjectId ? { ...p, updatedAt: Date.now(), sequenceRows: reindexed } : p
+          )
+
+          set({
+            projects: updatedProjects,
+            activeProjectId: cow.activeProjectId,
+            sequenceRows: reindexed,
+            toastMessage: cow.didFork ? `✨ Forked to "${cow.forkedName}"` : s.toastMessage,
           })
         },
 
         moveSequenceRowToExtreme: (stepId, position) => {
-          set((s) => {
-            const rows = [...s.sequenceRows]
-            const idx = rows.findIndex(r => r.step_id === stepId)
-            if (idx === -1) return {}
-            const [moved] = rows.splice(idx, 1)
-            if (position === 'start') {
-              rows.unshift(moved)
-            } else {
-              rows.push(moved)
-            }
-            const reindexed = rows.map((r, i) => ({ ...r, step_id: i + 1 }))
-            return { sequenceRows: reindexed }
+          const s = get()
+          const cow = checkAndForkSample(s.projects, s.activeProjectId, s)
+          const rows = [...s.sequenceRows]
+          const idx = rows.findIndex(r => r.step_id === stepId)
+          if (idx === -1) return
+          const [moved] = rows.splice(idx, 1)
+          if (position === 'start') {
+            rows.unshift(moved)
+          } else {
+            rows.push(moved)
+          }
+          const reindexed = rows.map((r, i) => ({ ...r, step_id: i + 1 }))
+
+          const updatedProjects = cow.projects.map(p =>
+            p.id === cow.activeProjectId ? { ...p, updatedAt: Date.now(), sequenceRows: reindexed } : p
+          )
+
+          set({
+            projects: updatedProjects,
+            activeProjectId: cow.activeProjectId,
+            sequenceRows: reindexed,
+            toastMessage: cow.didFork ? `✨ Forked to "${cow.forkedName}"` : s.toastMessage,
           })
         },
 
         moveSequenceRowToStep: (stepId, targetStep) => {
-          set((s) => {
-            const rows = [...s.sequenceRows]
-            const idx = rows.findIndex(r => r.step_id === stepId)
-            if (idx === -1) return {}
-            const [moved] = rows.splice(idx, 1)
-            const targetIdx = Math.max(0, Math.min(rows.length, targetStep - 1))
-            rows.splice(targetIdx, 0, moved)
-            const reindexed = rows.map((r, i) => ({ ...r, step_id: i + 1 }))
-            return { sequenceRows: reindexed }
+          const s = get()
+          const cow = checkAndForkSample(s.projects, s.activeProjectId, s)
+          const rows = [...s.sequenceRows]
+          const idx = rows.findIndex(r => r.step_id === stepId)
+          if (idx === -1) return
+          const [moved] = rows.splice(idx, 1)
+          const targetIdx = Math.max(0, Math.min(rows.length, targetStep - 1))
+          rows.splice(targetIdx, 0, moved)
+          const reindexed = rows.map((r, i) => ({ ...r, step_id: i + 1 }))
+
+          const updatedProjects = cow.projects.map(p =>
+            p.id === cow.activeProjectId ? { ...p, updatedAt: Date.now(), sequenceRows: reindexed } : p
+          )
+
+          set({
+            projects: updatedProjects,
+            activeProjectId: cow.activeProjectId,
+            sequenceRows: reindexed,
+            toastMessage: cow.didFork ? `✨ Forked to "${cow.forkedName}"` : s.toastMessage,
           })
         },
       }),
       { limit: 50 }
     ),
     {
-      name: 'pack-and-place-storage-v2',
+      name: 'pack-and-place-storage-v3',
       storage: createJSONStorage(getBrowserStorage),
-      // Persist all user parameters across page reloads
       partialize: (state) => ({
-        room: state.room,
-        furniture: state.furniture,
-        selectedId: state.selectedId,
-        plan: state.plan,
+        projects: state.projects,
+        activeProjectId: state.activeProjectId,
         catalogMode: state.catalogMode,
         catalogLayout: state.catalogLayout,
         display: state.display,
         theme: state.theme,
       }),
       onRehydrateStorage: () => (state) => {
-        // Fallback if rehydrated with empty furniture
-        if (state && (!state.furniture || state.furniture.length === 0)) {
-          state.furniture = makePresets()
+        if (!state) return
+        const factory = createFactorySampleProjects()
+        if (!state.projects || state.projects.length === 0) {
+          state.projects = factory
+        } else {
+          // Ensure factory samples are present in projects
+          for (const fs of factory) {
+            if (!state.projects.some(p => p.id === fs.id)) {
+              state.projects.unshift(fs)
+            }
+          }
+        }
+        const active = state.projects.find(p => p.id === state.activeProjectId) ?? state.projects[0]
+        if (active) {
+          state.activeProjectId = active.id
+          state.room = active.room
+          state.furniture = active.furniture
+          state.sequenceRows = active.sequenceRows ?? []
+          state.plan = active.plan ?? null
         }
       },
     }
