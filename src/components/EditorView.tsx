@@ -198,29 +198,66 @@ function BabylonCanvas() {
     removePlacementGhost()
   }
 
-  // Camera view switcher
-  const switchView = (mode: '3d' | '2d') => {
-    setLocalViewMode(mode)
-    setDisplay({ viewMode: mode })
+  // Camera framing with strict aspect-ratio preservation (prevents stretching/squishing in 2D and 3D)
+  const updateCameraFraming = (mode: '3d' | '2d') => {
     const camera = cameraRef
-    if (!camera) return
+    const canvas = canvasRef.current
+    if (!camera || !canvas) return
+
+    const clientW = canvas.clientWidth || 800
+    const clientH = canvas.clientHeight || 600
+    const aspect = clientW / clientH
+
+    const padding = 1.0 // meters padding around room
+    const totalW = roomW + padding * 2
+    const totalD = roomD + corridorLen + padding * 2
+    const centerX = roomW / 2
+    const centerZ = (roomD - corridorLen) / 2
 
     if (mode === '2d') {
       camera.mode = ArcRotateCamera.ORTHOGRAPHIC_CAMERA
       camera.alpha = -Math.PI / 2
-      camera.beta = 0.001 // looking directly straight down
-      camera.setTarget(new Vector3(roomW / 2, 0, roomD / 2 - 0.2))
-      camera.orthoTop = roomD + 1.2
-      camera.orthoBottom = -corridorLen - 1.2
-      camera.orthoLeft = -1.2
-      camera.orthoRight = roomW + 1.2
+      camera.beta = 0.0001 // looking directly straight down
+      camera.setTarget(new Vector3(centerX, 0, centerZ))
+
+      // Keep aspect ratio strictly 1:1 with canvas pixel aspect ratio
+      let halfW: number
+      let halfH: number
+
+      if (aspect >= totalW / totalD) {
+        // Viewport is wider than room bounds: fit height, expand width
+        halfH = totalD / 2
+        halfW = halfH * aspect
+      } else {
+        // Viewport is taller than room bounds: fit width, expand height
+        halfW = totalW / 2
+        halfH = halfW / aspect
+      }
+
+      camera.orthoLeft = -halfW
+      camera.orthoRight = halfW
+      camera.orthoTop = halfH
+      camera.orthoBottom = -halfH
     } else {
       camera.mode = ArcRotateCamera.PERSPECTIVE_CAMERA
       camera.alpha = -Math.PI / 3
       camera.beta = Math.PI / 3.4
-      camera.radius = roomW > 4.5 ? 11.5 : 9.5
-      camera.setTarget(new Vector3(roomW / 2, 0.4, roomD / 2))
+      camera.setTarget(new Vector3(centerX, 0.4, centerZ))
+
+      // Calculate radius so room stays comfortably framed regardless of shrink
+      const maxDim = Math.max(roomW, roomD)
+      const targetRadius = aspect < 1.0
+        ? (maxDim / aspect) * 1.5 + 3.0
+        : maxDim * 1.4 + 3.0
+      camera.radius = Math.max(7.0, Math.min(targetRadius, 15.0))
     }
+  }
+
+  // Camera view switcher
+  const switchView = (mode: '3d' | '2d') => {
+    setLocalViewMode(mode)
+    setDisplay({ viewMode: mode })
+    updateCameraFraming(mode)
   }
 
   // Animation loop for smooth playback (runs uninterrupted while playing)
@@ -264,66 +301,99 @@ function BabylonCanvas() {
 
   // Initialize Babylon Scene & Camera
   useEffect(() => {
-    if (!canvasRef.current) return
-    if (engineRef) return
+    const canvas = canvasRef.current
+    if (!canvas) return
 
-    const engine = new Engine(canvasRef.current, true, { preserveDrawingBuffer: true, stencil: true })
-    const scene = new Scene(engine)
-    engineRef = engine
-    sceneRef = scene
+    // If existing engine is bound to a dead/unmounted canvas, dispose it
+    if (engineRef) {
+      if (engineRef.getRenderingCanvas() !== canvas) {
+        engineRef.dispose()
+        engineRef = null
+        sceneRef = null
+        cameraRef = null
+      }
+    }
 
-    scene.clearColor = canvasBgToColor4(BG_MAP[theme] ?? BG_MAP.dark)
+    let engine = engineRef
+    let scene = sceneRef
+    let camera = cameraRef
 
-    const camera = new ArcRotateCamera(
-      'cam',
-      -Math.PI / 3,
-      Math.PI / 3.4,
-      11.5,
-      new Vector3(2.5, 0.4, 1.6),
-      scene
-    )
-    camera.mode = ArcRotateCamera.PERSPECTIVE_CAMERA
-    camera.lowerRadiusLimit = 3
-    camera.upperRadiusLimit = 25
-    camera.upperBetaLimit = Math.PI / 2.02
-    camera.attachControl(canvasRef.current, true)
-    cameraRef = camera
+    if (!engine) {
+      engine = new Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true, adaptToDeviceRatio: true })
+      scene = new Scene(engine)
+      engineRef = engine
+      sceneRef = scene
 
-    const hemiLight = new HemisphericLight('hemi-light', new Vector3(0.5, 2, 0.5), scene)
-    hemiLight.intensity = 0.85
-    hemiLight.groundColor = new Color3(0.15, 0.18, 0.25)
+      scene.clearColor = canvasBgToColor4(BG_MAP[theme] ?? BG_MAP.dark)
 
-    const dirLight = new DirectionalLight('dir-light', new Vector3(-1, -2, -1), scene)
-    dirLight.position = new Vector3(8, 12, 8)
-    dirLight.intensity = 0.5
+      camera = new ArcRotateCamera(
+        'cam',
+        -Math.PI / 3,
+        Math.PI / 3.4,
+        11.5,
+        new Vector3(roomW / 2, 0.4, roomD / 2),
+        scene
+      )
+      camera.mode = ArcRotateCamera.PERSPECTIVE_CAMERA
+      camera.lowerRadiusLimit = 3
+      camera.upperRadiusLimit = 28
+      camera.upperBetaLimit = Math.PI / 2.02
+      camera.attachControl(canvas, true)
+      cameraRef = camera
 
-    // Click on 3D meshes to select
-    scene.onPointerObservable.add((pointerInfo) => {
-      if (pointerInfo.type === PointerEventTypes.POINTERDOWN) {
-        const pick = pointerInfo.pickInfo
-        if (pick && pick.hit && pick.pickedMesh && pick.pickedMesh.name.startsWith('furn-')) {
-          const id = pick.pickedMesh.name.replace('furn-', '')
-          setSelectedId(id)
-        } else if (pick && pick.hit && pick.pickedMesh?.name.includes('floor')) {
-          setSelectedId(null)
+      const hemiLight = new HemisphericLight('hemi-light', new Vector3(0.5, 2, 0.5), scene)
+      hemiLight.intensity = 0.85
+      hemiLight.groundColor = new Color3(0.15, 0.18, 0.25)
+
+      const dirLight = new DirectionalLight('dir-light', new Vector3(-1, -2, -1), scene)
+      dirLight.position = new Vector3(8, 12, 8)
+      dirLight.intensity = 0.5
+
+      // Click on 3D meshes to select
+      scene.onPointerObservable.add((pointerInfo) => {
+        if (pointerInfo.type === PointerEventTypes.POINTERDOWN) {
+          const pick = pointerInfo.pickInfo
+          if (pick && pick.hit && pick.pickedMesh && pick.pickedMesh.name.startsWith('furn-')) {
+            const id = pick.pickedMesh.name.replace('furn-', '')
+            setSelectedId(id)
+          } else if (pick && pick.hit && pick.pickedMesh?.name.includes('floor')) {
+            setSelectedId(null)
+          }
         }
+      })
+
+      engine.runRenderLoop(() => scene?.render())
+    }
+
+    // Force correct dimensions and camera framing
+    engine.resize()
+    updateCameraFraming(display.viewMode ?? '3d')
+
+    // ResizeObserver on canvas itself — handles grid columns & catalog panel resizing
+    const ro = new ResizeObserver(() => {
+      if (engineRef && !engineRef.isDisposed) {
+        engineRef.resize()
+        const currentMode = useAppStore.getState().display.viewMode ?? '3d'
+        updateCameraFraming(currentMode)
       }
     })
+    ro.observe(canvas)
 
-    engine.runRenderLoop(() => scene.render())
-
-    // ResizeObserver on canvas itself — catches layout-driven resizes
-    // (grid column changes, CSV editor open/close) not just window resize
-    const ro = new ResizeObserver(() => {
-      engine.resize()
-    })
-    if (canvasRef.current) ro.observe(canvasRef.current)
-
-    const handleResize = () => engine.resize()
+    const handleResize = () => {
+      if (engineRef && !engineRef.isDisposed) {
+        engineRef.resize()
+        const currentMode = useAppStore.getState().display.viewMode ?? '3d'
+        updateCameraFraming(currentMode)
+      }
+    }
     window.addEventListener('resize', handleResize)
 
-    // Force correct dimensions on first mount (after CSS grid has settled)
-    requestAnimationFrame(() => engine.resize())
+    requestAnimationFrame(() => {
+      if (engineRef && !engineRef.isDisposed) {
+        engineRef.resize()
+        updateCameraFraming(display.viewMode ?? '3d')
+      }
+    })
 
     return () => {
       window.removeEventListener('resize', handleResize)
@@ -573,6 +643,8 @@ function BabylonCanvas() {
         cz.material = czMat
       }
     }
+
+    updateCameraFraming(display.viewMode ?? '3d')
   }, [furniture, room, display, selectedId, theme, plan, playbackStep])
 
   // High-performance smooth transform update for active furniture item (NO mesh disposal/recreation!)
