@@ -8,6 +8,7 @@ import { useAppStore } from '@/store/app-store'
 import { ResultsPanel } from '@/components/ResultsPanel'
 import { NTabInspector } from '@/components/NTabInspector'
 import { SequenceCSVEditor } from '@/components/SequenceCSVEditor'
+import { CatalogPanel } from '@/components/catalog/CatalogPanel'
 import { ROOM_PRESETS } from '@/data/presets'
 import { furnitureToOBB, satTest } from '@/solver/obb-sat'
 
@@ -183,6 +184,7 @@ function BabylonCanvas() {
     theme, plan, playbackStep, setPlaybackStep,
     playbackPlaying, setPlaybackPlaying,
     playbackProgress, setPlaybackProgress,
+    draggedCatalogItem, dropGhostPos, setDropGhostPos, placeCatalogItemAt,
   } = useAppStore()
 
   const [viewMode, setLocalViewMode] = useState<'3d' | '2d'>(display.viewMode ?? '3d')
@@ -214,6 +216,132 @@ function BabylonCanvas() {
   const doorRight = doorLeft + doorWidth
   const corridorLen = corridorLengthCm * SCALE
   const hallwayCenterX = doorLeft + doorWidth / 2
+
+  // ─── Placement Ghost & Drag-to-Place Handlers ──────────────────────────────
+
+  const removePlacementGhost = () => {
+    const scene = sceneRef
+    if (scene) {
+      const ghost = scene.getMeshByName('placement-ghost-box')
+      if (ghost) ghost.dispose()
+    }
+    setDropGhostPos(null)
+  }
+
+  const updatePlacementGhost = (clientX: number, clientY: number) => {
+    const scene = sceneRef
+    const canvas = canvasRef.current
+    const item = draggedCatalogItem
+    if (!scene || !canvas || !item) return
+
+    const rect = canvas.getBoundingClientRect()
+    const x = clientX - rect.left
+    const y = clientY - rect.top
+
+    const pick = scene.pick(x, y, (mesh) => mesh.name.includes('floor'))
+    if (!pick || !pick.hit || !pick.pickedPoint) return
+
+    const rawX = pick.pickedPoint.x / SCALE
+    const rawY = pick.pickedPoint.z / SCALE
+
+    // Snap to 10cm grid
+    const snapX = Math.round(rawX / 10) * 10
+    const snapY = Math.round(rawY / 10) * 10
+
+    // Align item centered on cursor
+    const placeX = Math.round(snapX - item.assembled.w / 2)
+    const placeY = Math.round(snapY - item.assembled.d / 2)
+
+    setDropGhostPos({ x: placeX, y: placeY })
+
+    // Boundary check
+    const isInside = placeX >= 0 && placeX + item.assembled.w <= (roomWidthCm || 500) &&
+                     placeY >= 0 && placeY + item.assembled.d <= (roomHeightCm || 380)
+
+    // Furniture collision check
+    let hasCollision = false
+    for (const f of furniture) {
+      if (!f.visible || !f.position) continue
+      const overlap = !(
+        placeX + item.assembled.w <= f.position.x ||
+        placeX >= f.position.x + f.assembled.w ||
+        placeY + item.assembled.d <= f.position.y ||
+        placeY >= f.position.y + f.assembled.d
+      )
+      if (overlap) {
+        hasCollision = true
+        break
+      }
+    }
+
+    const isValid = isInside && !hasCollision
+
+    let ghost = scene.getMeshByName('placement-ghost-box') as Mesh | null
+    if (!ghost) {
+      ghost = MeshBuilder.CreateBox('placement-ghost-box', {
+        width: item.assembled.w * SCALE,
+        height: item.assembled.h * SCALE,
+        depth: item.assembled.d * SCALE,
+      }, scene)
+      const mat = new StandardMaterial('placement-ghost-mat', scene)
+      ghost.material = mat
+      ghost.enableEdgesRendering(0.9)
+      ghost.edgesWidth = 3.5
+    }
+
+    ghost.position.x = (placeX + item.assembled.w / 2) * SCALE
+    ghost.position.z = (placeY + item.assembled.d / 2) * SCALE
+    ghost.position.y = (item.assembled.h / 2) * SCALE
+
+    const mat = ghost.material as StandardMaterial
+    if (isValid) {
+      mat.diffuseColor = hexToColor3('#10b981')
+      mat.emissiveColor = hexToColor3('#059669').scale(0.35)
+      mat.alpha = 0.45
+      ghost.edgesColor = new Color4(0.06, 0.72, 0.5, 0.95)
+    } else {
+      mat.diffuseColor = hexToColor3('#ef4444')
+      mat.emissiveColor = hexToColor3('#dc2626').scale(0.35)
+      mat.alpha = 0.45
+      ghost.edgesColor = new Color4(0.93, 0.27, 0.27, 0.95)
+    }
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+    updatePlacementGhost(e.clientX, e.clientY)
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    const item = draggedCatalogItem
+    if (!item) return
+
+    const scene = sceneRef
+    const canvas = canvasRef.current
+    if (!scene || !canvas) return
+
+    const rect = canvas.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+
+    const pick = scene.pick(x, y, (mesh) => mesh.name.includes('floor'))
+    let targetX = 50
+    let targetY = 50
+
+    if (pick && pick.hit && pick.pickedPoint) {
+      const rawX = pick.pickedPoint.x / SCALE
+      const rawY = pick.pickedPoint.z / SCALE
+      const snapX = Math.round(rawX / 10) * 10
+      const snapY = Math.round(rawY / 10) * 10
+      targetX = Math.round(snapX - item.assembled.w / 2)
+      targetY = Math.round(snapY - item.assembled.d / 2)
+    }
+
+    placeCatalogItemAt(item, targetX, targetY)
+    removePlacementGhost()
+  }
 
   // Camera view switcher
   const switchView = (mode: '3d' | '2d') => {
@@ -627,8 +755,24 @@ function BabylonCanvas() {
   }, [playbackProgress, playbackStep, plan, furniture])
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+    <div
+      style={{ position: 'relative', width: '100%', height: '100%' }}
+      onDragOver={handleDragOver}
+      onDragLeave={removePlacementGhost}
+      onDrop={handleDrop}
+    >
       <canvas ref={canvasRef} id="babylon-canvas" style={{ width: '100%', height: '100%' }} />
+
+      {/* Floating Placement Drag HUD */}
+      {draggedCatalogItem && dropGhostPos && (
+        <div className="canvas-drag-hud">
+          <span className="drag-hud-icon">{draggedCatalogItem.icon || '📦'}</span>
+          <span className="drag-hud-name">{draggedCatalogItem.name}</span>
+          <span className="drag-hud-coords">
+            X: {dropGhostPos.x}cm, Y: {dropGhostPos.y}cm (10cm snap)
+          </span>
+        </div>
+      )}
 
       {/* Floating 2D / 3D Mode & Viewport Controls */}
       <div className="canvas-view-toolbar">
@@ -682,6 +826,7 @@ export function EditorView() {
           transition: 'grid-template-columns 200ms ease',
           flex: 1,
           overflow: 'hidden',
+          minHeight: 0,
         }}
       >
         {/* 3D Viewport — always 52% (flex fill) */}
@@ -696,6 +841,9 @@ export function EditorView() {
         {/* Sequence CSV Editor — 40% (only when open) */}
         {isCSVEditorOpen && <SequenceCSVEditor />}
       </div>
+
+      {/* Unity Explorer Catalog Panel (v07) */}
+      <CatalogPanel />
 
       <SimulationTimelineDock />
     </div>

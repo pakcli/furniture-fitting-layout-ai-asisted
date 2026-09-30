@@ -27,6 +27,9 @@ export const BEDROOM_PRESETS: FurnitureItem[] = [
   {
     id: 'p-wardrobe',
     name: 'Wardrobe 2-door',
+    type: 'furniture',
+    category: 'furniture/bedroom',
+    icon: '🚪',
     assembled: { w: 100, d: 60, h: 200 },
     clearance: { front: 60 },
     canTilt: true,
@@ -59,6 +62,9 @@ export const BEDROOM_PRESETS: FurnitureItem[] = [
   {
     id: 'p-dresser',
     name: '6-Drawer Dresser',
+    type: 'furniture',
+    category: 'furniture/bedroom',
+    icon: '🗄',
     assembled: { w: 110, d: 50, h: 90 },
     clearance: { front: 60 },
     canTilt: false,
@@ -74,6 +80,9 @@ export const BEDROOM_PRESETS: FurnitureItem[] = [
   {
     id: 'p-bed',
     name: 'Queen Bed',
+    type: 'furniture',
+    category: 'furniture/bedroom',
+    icon: '🛏',
     assembled: { w: 160, d: 200, h: 55 },
     clearance: { left: 40, right: 40 },
     canTilt: true,
@@ -89,6 +98,9 @@ export const BEDROOM_PRESETS: FurnitureItem[] = [
   {
     id: 'p-ns-left',
     name: 'Nightstand (L)',
+    type: 'furniture',
+    category: 'furniture/tables',
+    icon: '🪑',
     assembled: { w: 45, d: 45, h: 55 },
     clearance: {},
     canTilt: false,
@@ -104,6 +116,9 @@ export const BEDROOM_PRESETS: FurnitureItem[] = [
   {
     id: 'p-ns-right',
     name: 'Nightstand (R)',
+    type: 'furniture',
+    category: 'furniture/tables',
+    icon: '🪑',
     assembled: { w: 45, d: 45, h: 55 },
     clearance: {},
     canTilt: false,
@@ -119,6 +134,9 @@ export const BEDROOM_PRESETS: FurnitureItem[] = [
   {
     id: 'p-desk',
     name: 'Work Desk',
+    type: 'furniture',
+    category: 'furniture/tables',
+    icon: '🖥',
     assembled: { w: 110, d: 60, h: 75 },
     clearance: { front: 70 },
     canTilt: false,
@@ -154,6 +172,9 @@ export const COMPACT_STUDIO_PRESETS: FurnitureItem[] = [
   {
     id: 'cs-wardrobe',
     name: 'Tall Wardrobe',
+    type: 'furniture',
+    category: 'furniture/bedroom',
+    icon: '🗄',
     assembled: { w: 85, d: 55, h: 195 },
     clearance: { front: 50 },
     canTilt: false,
@@ -171,6 +192,9 @@ export const COMPACT_STUDIO_PRESETS: FurnitureItem[] = [
   {
     id: 'cs-bed',
     name: 'Studio Bed (1.5m wide)',
+    type: 'furniture',
+    category: 'furniture/bedroom',
+    icon: '🛏',
     assembled: { w: 150, d: 90, h: 55 },
     clearance: { front: 40 },
     canTilt: true,
@@ -203,6 +227,9 @@ export const COMPACT_STUDIO_PRESETS: FurnitureItem[] = [
   {
     id: 'cs-nightstand',
     name: 'Bedside Table',
+    type: 'furniture',
+    category: 'furniture/tables',
+    icon: '🪑',
     assembled: { w: 45, d: 45, h: 50 },
     clearance: {},
     canTilt: false,
@@ -218,6 +245,9 @@ export const COMPACT_STUDIO_PRESETS: FurnitureItem[] = [
   {
     id: 'cs-desk',
     name: 'Compact Study Desk',
+    type: 'furniture',
+    category: 'furniture/tables',
+    icon: '💻',
     assembled: { w: 90, d: 50, h: 75 },
     clearance: { front: 50 },
     canTilt: false,
@@ -233,6 +263,9 @@ export const COMPACT_STUDIO_PRESETS: FurnitureItem[] = [
   {
     id: 'cs-armchair',
     name: 'Lounge Armchair',
+    type: 'furniture',
+    category: 'furniture/seating',
+    icon: '🪑',
     assembled: { w: 75, d: 70, h: 80 },
     clearance: { front: 40 },
     canTilt: false,

@@ -133,6 +133,31 @@ interface AppStore {
   saveSequenceAnimation: () => void
   exportSequenceCSV: () => void
   copySequencePrompt: () => void
+
+  // Catalog Explorer Panel (Unity style) & Drag Placement
+  catalogPanelVisible: boolean
+  setCatalogPanelVisible: (v: boolean) => void
+  catalogPanelHeight: number
+  setCatalogPanelHeight: (h: number) => void
+  catalogTreeWidth: number
+  setCatalogTreeWidth: (w: number) => void
+  catalogSelectedFolder: string
+  setCatalogSelectedFolder: (id: string) => void
+  catalogExpandedFolders: string[]
+  toggleCatalogFolderExpanded: (id: string) => void
+  catalogSearch: string
+  setCatalogSearch: (s: string) => void
+  catalogSortBy: 'name' | 'priority' | 'size'
+  setCatalogSortBy: (s: 'name' | 'priority' | 'size') => void
+  catalogViewMode: 'grid' | 'list'
+  setCatalogViewMode: (m: 'grid' | 'list') => void
+  autoFillCSVOnDrop: boolean
+  setAutoFillCSVOnDrop: (v: boolean) => void
+  draggedCatalogItem: FurnitureItem | null
+  setDraggedCatalogItem: (item: FurnitureItem | null) => void
+  dropGhostPos: { x: number; y: number } | null
+  setDropGhostPos: (pos: { x: number; y: number } | null) => void
+  placeCatalogItemAt: (item: FurnitureItem, x: number, y: number) => void
 }
 
 // ─── Persistent Store (localStorage) ──────────────────────────────────────────
@@ -344,6 +369,77 @@ export const useAppStore = create<AppStore>()(
             csvFull,
           ].join('\n')
           navigator.clipboard?.writeText(prompt).catch(() => {})
+        },
+
+        // Catalog Explorer Panel (Unity style) & Drag Placement
+        catalogPanelVisible: true,
+        setCatalogPanelVisible: (v) => set({ catalogPanelVisible: v }),
+        catalogPanelHeight: 200,
+        setCatalogPanelHeight: (h) => set({ catalogPanelHeight: Math.max(120, Math.min(h, window.innerHeight * 0.45)) }),
+        catalogTreeWidth: 300,
+        setCatalogTreeWidth: (w) => set({ catalogTreeWidth: Math.max(260, Math.min(w, window.innerWidth * 0.5)) }),
+        catalogSelectedFolder: 'furniture/seating',
+        setCatalogSelectedFolder: (id) => set({ catalogSelectedFolder: id }),
+        catalogExpandedFolders: ['furniture', 'obstacles', 'decor'],
+        toggleCatalogFolderExpanded: (id) =>
+          set((s) => ({
+            catalogExpandedFolders: s.catalogExpandedFolders.includes(id)
+              ? s.catalogExpandedFolders.filter(f => f !== id)
+              : [...s.catalogExpandedFolders, id],
+          })),
+        catalogSearch: '',
+        setCatalogSearch: (s) => set({ catalogSearch: s }),
+        catalogSortBy: 'name',
+        setCatalogSortBy: (s) => set({ catalogSortBy: s }),
+        catalogViewMode: 'grid',
+        setCatalogViewMode: (m) => set({ catalogViewMode: m }),
+        autoFillCSVOnDrop: true,
+        setAutoFillCSVOnDrop: (v) => set({ autoFillCSVOnDrop: v }),
+        draggedCatalogItem: null,
+        setDraggedCatalogItem: (item) => set({ draggedCatalogItem: item }),
+        dropGhostPos: null,
+        setDropGhostPos: (pos) => set({ dropGhostPos: pos }),
+        placeCatalogItemAt: (item, x, y) => {
+          const newId = `item-${Date.now()}-${Math.floor(Math.random() * 1000)}`
+          const newItem: FurnitureItem = {
+            ...item,
+            id: newId,
+            position: { x: Math.round(x), y: Math.round(y) },
+            rotation: 0,
+            visible: true,
+            color: item.color || nextColor(),
+            components: item.components ? JSON.parse(JSON.stringify(item.components)) : [],
+          }
+
+          const { autoFillCSVOnDrop, sequenceRows } = get()
+          let nextRows = sequenceRows
+          if (autoFillCSVOnDrop) {
+            const nextStepId = sequenceRows.length > 0 ? Math.max(...sequenceRows.map(r => r.step_id)) + 1 : 1
+            const newSeqRow: SequenceStep = {
+              step_id: nextStepId,
+              object_id: newItem.id,
+              object_name: newItem.name,
+              start_pos_x: Math.round(x),
+              start_pos_y: Math.round(y),
+              start_rot: 0,
+              end_pos_x: Math.round(x),
+              end_pos_y: Math.round(y),
+              end_rot: 0,
+              duration_s: 1.5,
+              easing: 'ease-in-out',
+              notes: 'Placed via catalog drag',
+            }
+            nextRows = [...sequenceRows, newSeqRow]
+          }
+
+          set((s) => ({
+            furniture: [...s.furniture, newItem],
+            selectedId: newId,
+            inspectorTab: 'object',
+            sequenceRows: nextRows,
+            draggedCatalogItem: null,
+            dropGhostPos: null,
+          }))
         },
       }),
       { limit: 50 }

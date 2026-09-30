@@ -8,6 +8,16 @@ export type Theme = 'dark' | 'light' | 'cream'
 export type CatalogMode = 'view-only' | 'live-editor' | 'editor-apply'
 export type CatalogLayout = 'detail' | 'card'
 
+export type ObjectType = 'furniture' | 'fixture' | 'decor' | 'wall' | 'door' | 'window'
+
+export interface CatalogFolder {
+  id: string
+  label: string
+  icon: string
+  children?: CatalogFolder[]
+  itemTypes?: ObjectType[]
+}
+
 export interface Dims {
   w: number // cm
   d: number // cm
@@ -46,6 +56,9 @@ export interface FurnitureItem {
   color: string // hex, auto-assigned pastel
   modelUrl?: string // .glb path if provided
   components: FurnitureComponent[]
+  type?: ObjectType
+  category?: string // e.g. "furniture/seating"
+  icon?: string // emoji for catalog thumbnail
   // runtime state
   position?: { x: number; y: number }
   rotation?: number // degrees
