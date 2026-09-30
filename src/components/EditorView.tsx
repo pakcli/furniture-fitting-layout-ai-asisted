@@ -36,6 +36,7 @@ function BabylonCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const {
     furniture, room, display, setDisplay, selectedId, setSelectedId,
+    updateFurniture, removeFurniture, duplicateFurniture, showToast,
     theme, plan, playbackStep, setPlaybackStep,
     playbackPlaying, setPlaybackPlaying,
     playbackProgress, setPlaybackProgress,
@@ -71,6 +72,39 @@ function BabylonCanvas() {
   const doorRight = doorLeft + doorWidth
   const corridorLen = corridorLengthCm * SCALE
   const hallwayCenterX = doorLeft + doorWidth / 2
+
+  // ─── Keyboard Snap Rotation (← / → 45° Snap) ─────────────────────────────
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
+        return
+      }
+
+      const { selectedId, furniture, updateFurniture, showToast } = useAppStore.getState()
+      if (!selectedId) return
+
+      const item = furniture.find(f => f.id === selectedId)
+      if (!item) return
+
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        const curRot = item.rotation ?? 0
+        const nextRot = ((curRot - 45) % 360 + 360) % 360
+        updateFurniture(selectedId, { rotation: nextRot })
+        showToast(`🔄 Rotated "${item.name}" to ${nextRot}° (-45° snap)`)
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        const curRot = item.rotation ?? 0
+        const nextRot = (curRot + 45) % 360
+        updateFurniture(selectedId, { rotation: nextRot })
+        showToast(`🔄 Rotated "${item.name}" to ${nextRot}° (+45° snap)`)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
 
   // ─── Placement Ghost & Drag-to-Place Handlers ──────────────────────────────
 
@@ -356,7 +390,7 @@ function BabylonCanvas() {
       dirLight.position = new Vector3(8, 12, 8)
       dirLight.intensity = 0.5
 
-      // Click on 3D meshes to select (unless sequence is playing)
+      // Click on 3D meshes to select / Scrollwheel for Elevation
       scene.onPointerObservable.add((pointerInfo) => {
         if (pointerInfo.type === PointerEventTypes.POINTERDOWN) {
           if (useAppStore.getState().playbackPlaying) return
@@ -366,6 +400,26 @@ function BabylonCanvas() {
             setSelectedId(id)
           } else if (pick && pick.hit && pick.pickedMesh?.name.includes('floor')) {
             setSelectedId(null)
+          }
+        } else if (pointerInfo.type === PointerEventTypes.POINTERWHEEL) {
+          const { selectedId, furniture, room, updateFurniture, showToast } = useAppStore.getState()
+          const pick = pointerInfo.pickInfo
+          const furnMesh = pick?.pickedMesh?.name.startsWith('furn-') ? pick.pickedMesh.name.replace('furn-', '') : null
+          const targetId = furnMesh || selectedId
+
+          if (targetId) {
+            const item = furniture.find(f => f.id === targetId)
+            if (item) {
+              const wheelEvt = pointerInfo.event as WheelEvent
+              const curElev = item.elevationCm ?? 0
+              const maxElev = Math.max(0, (room.ceilingHeightCm || 280) - item.assembled.h)
+              const delta = wheelEvt.deltaY < 0 ? 5 : -5
+              const nextElev = Math.max(0, Math.min(maxElev, curElev + delta))
+              if (nextElev !== curElev) {
+                updateFurniture(targetId, { elevationCm: nextElev })
+                showToast(`📏 "${item.name}" Height: ${nextElev}cm (${nextElev > 0 ? 'Elevated' : 'Floor'})`)
+              }
+            }
           }
         }
       })
@@ -494,10 +548,10 @@ function BabylonCanvas() {
       )
       .forEach(m => m.dispose())
 
-    // Clean up any deleted furniture meshes
+    // Clean up any deleted furniture meshes & elevation markers
     const activeFurnIds = new Set(furniture.map(f => f.id))
     scene.meshes
-      .filter(m => m.name.startsWith('furn-') && !activeFurnIds.has(m.name.replace('furn-', '')))
+      .filter(m => (m.name.startsWith('furn-') || m.name.startsWith('elev-line-') || m.name.startsWith('elev-ring-')) && !activeFurnIds.has(m.name.replace('furn-', '').replace('elev-line-', '').replace('elev-ring-', '')))
       .forEach(m => m.dispose())
 
     // 4. Ghost Sweep Volume & Pathways (The Crucial Visualization)
@@ -573,9 +627,10 @@ function BabylonCanvas() {
       const planIdx = plan?.steps.findIndex(s => s.furnitureId === f.id) ?? -1
 
       // Determine mesh position & rotation based on playback state
+      const elevation = f.elevationCm || 0
       let posX = (f.position.x + f.assembled.w / 2) * SCALE
       let posZ = (f.position.y + f.assembled.d / 2) * SCALE
-      let posY = (f.assembled.h / 2) * SCALE
+      let posY = (elevation + f.assembled.h / 2) * SCALE
       let rotY = ((f.rotation ?? 0) * Math.PI) / 180
       let meshAlpha = 1.0
 
@@ -634,6 +689,38 @@ function BabylonCanvas() {
       mesh.position.z = posZ
       mesh.position.y = posY
       mesh.rotation.y = rotY
+
+      // Elevation indicators (drop-line to floor and footprint disc)
+      const dropLineName = `elev-line-${f.id}`
+      const ringName = `elev-ring-${f.id}`
+      let dropLine = scene.getMeshByName(dropLineName)
+      let ring = scene.getMeshByName(ringName)
+
+      if (elevation > 0) {
+        if (dropLine) dropLine.dispose()
+        dropLine = MeshBuilder.CreateLines(dropLineName, {
+          points: [
+            new Vector3(posX, 0.002, posZ),
+            new Vector3(posX, elevation * SCALE, posZ)
+          ]
+        }, scene)
+        ;(dropLine as any).color = new Color3(0.06, 0.72, 0.95)
+
+        if (!ring) {
+          ring = MeshBuilder.CreateDisc(ringName, { radius: Math.min(f.assembled.w, f.assembled.d) * SCALE * 0.35 }, scene)
+          ring.rotation.x = Math.PI / 2
+          const ringMat = new StandardMaterial(`ring-mat-${f.id}`, scene)
+          ringMat.diffuseColor = hexToColor3('#06b6d4')
+          ringMat.alpha = 0.35
+          ring.material = ringMat
+        }
+        ring.position.x = posX
+        ring.position.z = posZ
+        ring.position.y = 0.003
+      } else {
+        if (dropLine) dropLine.dispose()
+        if (ring) ring.dispose()
+      }
 
       // Material — reuse existing material to prevent shader recompilation flicker!
       let mat = scene.getMaterialByName(`mat-${f.id}`) as StandardMaterial | null
@@ -802,12 +889,27 @@ function BabylonCanvas() {
     activeMesh.rotation.y = (curRot * Math.PI) / 180
   }, [playbackProgress, playbackStep, plan, furniture])
 
+  const handleCanvasWheel = (e: React.WheelEvent) => {
+    if (!selectedId) return
+    const item = furniture.find(f => f.id === selectedId)
+    if (!item) return
+    const curElev = item.elevationCm ?? 0
+    const maxElev = Math.max(0, (room.ceilingHeightCm || 280) - item.assembled.h)
+    const delta = e.deltaY < 0 ? 5 : -5
+    const nextElev = Math.max(0, Math.min(maxElev, curElev + delta))
+    if (nextElev !== curElev) {
+      updateFurniture(selectedId, { elevationCm: nextElev })
+      showToast(`📏 "${item.name}" Height: ${nextElev}cm (${nextElev > 0 ? 'Elevated' : 'Floor'})`)
+    }
+  }
+
   return (
     <div
       style={{ position: 'relative', width: '100%', height: '100%' }}
       onDragOver={handleDragOver}
       onDragLeave={removePlacementGhost}
       onDrop={handleDrop}
+      onWheel={handleCanvasWheel}
     >
       <canvas ref={canvasRef} id="babylon-canvas" style={{ width: '100%', height: '100%' }} />
 
@@ -821,6 +923,109 @@ function BabylonCanvas() {
           </span>
         </div>
       )}
+
+      {/* Floating Selected Item Control HUD (Snap 45° & Scrollwheel Elevation) */}
+      {(() => {
+        const selectedItem = furniture.find(f => f.id === selectedId)
+        if (!selectedItem) return null
+
+        return (
+          <div className="canvas-selected-hud">
+            <div className="selected-hud-title">
+              <span className="hud-icon">{selectedItem.icon || '📦'}</span>
+              <span className="hud-name">{selectedItem.name}</span>
+            </div>
+
+            <div className="hud-divider" />
+
+            {/* Snap 45° Rotation */}
+            <div className="hud-control-group">
+              <span className="hud-lbl">Snap Rot:</span>
+              <button
+                className="hud-btn"
+                onClick={() => {
+                  const cur = selectedItem.rotation ?? 0
+                  const nextRot = ((cur - 45) % 360 + 360) % 360
+                  updateFurniture(selectedItem.id, { rotation: nextRot })
+                  showToast(`🔄 Rotated to ${nextRot}° (-45° snap)`)
+                }}
+                title="Rotate -45° (Keyboard: ← Left Arrow)"
+              >
+                ↶ -45°
+              </button>
+              <span className="hud-val font-mono">{selectedItem.rotation ?? 0}°</span>
+              <button
+                className="hud-btn"
+                onClick={() => {
+                  const cur = selectedItem.rotation ?? 0
+                  const nextRot = (cur + 45) % 360
+                  updateFurniture(selectedItem.id, { rotation: nextRot })
+                  showToast(`🔄 Rotated to ${nextRot}° (+45° snap)`)
+                }}
+                title="Rotate +45° (Keyboard: → Right Arrow)"
+              >
+                ↷ +45°
+              </button>
+            </div>
+
+            <div className="hud-divider" />
+
+            {/* Elevation Height */}
+            <div className="hud-control-group">
+              <span className="hud-lbl">Elev (Z):</span>
+              <button
+                className="hud-btn"
+                onClick={() => {
+                  const cur = selectedItem.elevationCm ?? 0
+                  const nextElev = Math.max(0, cur - 5)
+                  updateFurniture(selectedItem.id, { elevationCm: nextElev })
+                  showToast(`📏 Height: ${nextElev}cm`)
+                }}
+                title="Lower -5cm (Mouse: Scroll Down)"
+              >
+                ▼ -5
+              </button>
+              <span className="hud-val font-mono">{selectedItem.elevationCm ?? 0}cm</span>
+              <button
+                className="hud-btn"
+                onClick={() => {
+                  const cur = selectedItem.elevationCm ?? 0
+                  const maxElev = Math.max(0, (room.ceilingHeightCm || 280) - selectedItem.assembled.h)
+                  const nextElev = Math.min(maxElev, cur + 5)
+                  updateFurniture(selectedItem.id, { elevationCm: nextElev })
+                  showToast(`📏 Height: ${nextElev}cm`)
+                }}
+                title="Raise +5cm (Mouse: Scroll Up)"
+              >
+                ▲ +5
+              </button>
+            </div>
+
+            <div className="hud-divider" />
+
+            {/* Quick Actions */}
+            <div className="hud-actions-group">
+              <button
+                className="hud-btn"
+                onClick={() => duplicateFurniture(selectedItem.id)}
+                title="Duplicate item"
+              >
+                📋 Duplicate
+              </button>
+              <button
+                className="hud-btn hud-danger"
+                onClick={() => {
+                  removeFurniture(selectedItem.id)
+                  showToast(`🗑 Removed "${selectedItem.name}"`)
+                }}
+                title="Delete item"
+              >
+                🗑
+              </button>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Floating 2D / 3D Mode & Viewport Controls */}
       <div className="canvas-view-toolbar">

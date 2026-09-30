@@ -6,6 +6,7 @@ import { AssetGrid } from './AssetGrid'
 
 export function CatalogPanel() {
   const {
+    activeTab,
     catalogPanelVisible,
     catalogPanelHeight,
     setCatalogPanelHeight,
@@ -81,22 +82,25 @@ export function CatalogPanel() {
 
   if (!catalogPanelVisible) return null
 
-  const isCollapsed = catalogPanelHeight <= 42
+  const isFullScreen = activeTab === 'catalog'
+  const isCollapsed = !isFullScreen && catalogPanelHeight <= 42
 
   return (
     <div
       ref={panelRef}
-      className={`catalog-panel-root${isCollapsed ? ' collapsed' : ''}`}
-      style={{ height: `${catalogPanelHeight}px` }}
+      className={`catalog-panel-root${isFullScreen ? ' is-fullscreen' : ''}${isCollapsed ? ' collapsed' : ''}`}
+      style={{ height: isFullScreen ? '100%' : `${catalogPanelHeight}px` }}
     >
-      {/* Top Resize Drag Handle */}
-      <div
-        className="catalog-resize-handle-h"
-        onMouseDown={handleHeightMouseDown}
-        title="Drag up/down to resize Catalog Explorer panel"
-      >
-        <div className="resize-handle-pill" />
-      </div>
+      {/* Top Resize Drag Handle (docked mode only) */}
+      {!isFullScreen && (
+        <div
+          className="catalog-resize-handle-h"
+          onMouseDown={handleHeightMouseDown}
+          title="Drag up/down to resize Catalog Explorer panel"
+        >
+          <div className="resize-handle-pill" />
+        </div>
+      )}
 
       {/* Header with Breadcrumb, Search, and Options */}
       <CatalogHeader />

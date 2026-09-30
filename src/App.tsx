@@ -14,7 +14,6 @@ type Tab = 'catalog' | 'editor' | 'hierarchy' | 'simulation'
 const TABS: { id: Tab; label: string }[] = [
   { id: 'editor',     label: '📐 3D Studio & Simulation' },
   { id: 'catalog',    label: '📦 Catalog' },
-  { id: 'hierarchy',  label: '🌳 Hierarchy' },
 ]
 
 function StatusBar() {
@@ -80,10 +79,8 @@ export default function App() {
       </div>
 
       {/* Tab content */}
-      <div className="tab-content">
-        {activeTab === 'catalog'    && <CatalogView />}
-        {(activeTab === 'editor' || activeTab === 'simulation') && <EditorView />}
-        {activeTab === 'hierarchy'  && <HierarchyView />}
+      <div className="tab-content" style={{ position: 'relative' }}>
+        <EditorView />
       </div>
 
       {/* Status bar */}

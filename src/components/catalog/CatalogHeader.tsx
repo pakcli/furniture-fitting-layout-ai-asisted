@@ -17,6 +17,8 @@ export function CatalogHeader() {
     catalogPanelHeight,
     setCatalogPanelHeight,
     playbackPlaying,
+    activeTab,
+    setActiveTab,
   } = useAppStore()
 
   const breadcrumbs = getFolderBreadcrumb(catalogSelectedFolder)
@@ -100,32 +102,50 @@ export function CatalogHeader() {
           </select>
         </div>
 
-        {/* View Mode */}
+        {/* View Mode (3 Modes: Cards, Table Edit, Thumbnail + Detail) */}
         <div className="catalog-view-toggles">
           <button
-            className={`view-toggle-btn${catalogViewMode === 'grid' ? ' active' : ''}`}
-            onClick={() => setCatalogViewMode('grid')}
-            title="Grid View"
+            className={`view-toggle-btn${catalogViewMode === 'card' ? ' active' : ''}`}
+            onClick={() => setCatalogViewMode('card')}
+            title="Card View (3D Cards)"
           >
-            ⊞
+            ⊞ Cards
           </button>
           <button
-            className={`view-toggle-btn${catalogViewMode === 'list' ? ' active' : ''}`}
-            onClick={() => setCatalogViewMode('list')}
-            title="List View"
+            className={`view-toggle-btn${catalogViewMode === 'table-edit' ? ' active' : ''}`}
+            onClick={() => setCatalogViewMode('table-edit')}
+            title="Table-Alike ListView-Edit Mode"
           >
-            ☰
+            ☰ Table Edit
+          </button>
+          <button
+            className={`view-toggle-btn${catalogViewMode === 'thumbnail-detail' ? ' active' : ''}`}
+            onClick={() => setCatalogViewMode('thumbnail-detail')}
+            title="Thumbnail + Detail View"
+          >
+            ▤ Thumb + Detail
           </button>
         </div>
 
-        {/* Collapse / Expand */}
+        {/* Fullscreen / Dock Toggle */}
         <button
-          className="catalog-action-btn"
-          onClick={toggleCollapse}
-          title={isCollapsed ? 'Expand Catalog Panel' : 'Collapse Catalog Panel'}
+          className={`catalog-action-btn${activeTab === 'catalog' ? ' active' : ''}`}
+          onClick={() => setActiveTab(activeTab === 'catalog' ? 'editor' : 'catalog')}
+          title={activeTab === 'catalog' ? 'Dock to bottom drawer (3D View)' : 'Expand to Fullscreen Catalog'}
         >
-          {isCollapsed ? '▲' : '▼'}
+          {activeTab === 'catalog' ? '🗗 Dock' : '⛶ Fullscreen'}
         </button>
+
+        {/* Collapse / Expand (only when docked) */}
+        {activeTab !== 'catalog' && (
+          <button
+            className="catalog-action-btn"
+            onClick={toggleCollapse}
+            title={isCollapsed ? 'Expand Catalog Panel' : 'Collapse Catalog Panel'}
+          >
+            {isCollapsed ? '▲' : '▼'}
+          </button>
+        )}
       </div>
     </div>
   )

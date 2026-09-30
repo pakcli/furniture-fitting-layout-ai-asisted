@@ -6,7 +6,7 @@ export type Orientation = 'upright' | 'flat' | 'on-side'
 export type MaterialMode = 'matte' | 'texture' | 'fallback'
 export type Theme = 'dark' | 'light' | 'cream'
 export type CatalogMode = 'view-only' | 'live-editor' | 'editor-apply'
-export type CatalogLayout = 'detail' | 'card'
+export type CatalogLayout = 'card' | 'table-edit' | 'thumbnail-detail' | 'detail'
 
 export type ObjectType = 'furniture' | 'fixture' | 'decor' | 'wall' | 'door' | 'window'
 
@@ -52,7 +52,8 @@ export type TransformTarget = 'current' | 'start' | 'end'
 export interface FurnitureItem {
   id: string
   name: string
-  assembled: Dims
+  assembled: Dims // Bound dimensions (W, D, H in cm)
+  meshSize?: Dims // Physical mesh dimensions (defaults to assembled)
   clearance: Clearance
   canTilt: boolean
   priority: Priority
@@ -62,12 +63,16 @@ export interface FurnitureItem {
   type?: ObjectType
   category?: string // e.g. "furniture/seating"
   icon?: string // emoji for catalog thumbnail
+  // Elevation / vertical height above floor in cm (e.g. wall shelf, wall clock, mirror)
+  elevationCm?: number
   // Placement mode & transforms (v08)
   placementMode?: PlacementMode
   startPosition?: { x: number; y: number }
   startRotation?: number
+  startElevationCm?: number
   endPosition?: { x: number; y: number }
   endRotation?: number
+  endElevationCm?: number
   localProgress?: number // 0.0 to 1.0 for local scrub preview
   // runtime state
   position?: { x: number; y: number }

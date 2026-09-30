@@ -79,6 +79,7 @@ export interface AppStore {
   addFurniture: (f: FurnitureItem) => void
   updateFurniture: (id: string, patch: Partial<FurnitureItem>) => void
   removeFurniture: (id: string) => void
+  duplicateFurniture: (id: string) => string
   setFurnitureVisible: (id: string, visible: boolean) => void
   resetToPresets: () => void
 
@@ -152,8 +153,8 @@ export interface AppStore {
   setCatalogSearch: (s: string) => void
   catalogSortBy: 'name' | 'priority' | 'size'
   setCatalogSortBy: (s: 'name' | 'priority' | 'size') => void
-  catalogViewMode: 'grid' | 'list'
-  setCatalogViewMode: (m: 'grid' | 'list') => void
+  catalogViewMode: 'card' | 'table-edit' | 'thumbnail-detail'
+  setCatalogViewMode: (m: 'card' | 'table-edit' | 'thumbnail-detail') => void
   autoFillCSVOnDrop: boolean
   setAutoFillCSVOnDrop: (v: boolean) => void
   draggedCatalogItem: FurnitureItem | null
@@ -580,6 +581,38 @@ export const useAppStore = create<AppStore>()(
             }
           }),
 
+        duplicateFurniture: (id) => {
+          const s = get()
+          const cow = checkAndForkSample(s.projects, s.activeProjectId, s)
+          const target = s.furniture.find(f => f.id === id)
+          if (!target) return ''
+
+          const newId = `item-${Date.now()}-${Math.floor(Math.random() * 1000)}`
+          const copy: FurnitureItem = {
+            ...JSON.parse(JSON.stringify(target)),
+            id: newId,
+            name: `${target.name} (Copy)`,
+            position: {
+              x: Math.min(s.room.walls[1]?.x2 ?? 400 - 40, (target.position?.x ?? 50) + 20),
+              y: Math.min(s.room.walls[2]?.y2 ?? 300 - 40, (target.position?.y ?? 50) + 20),
+            },
+          }
+
+          const nextFurniture = [...s.furniture, copy]
+          const updatedProjects = cow.projects.map(p =>
+            p.id === cow.activeProjectId ? { ...p, updatedAt: Date.now(), furniture: nextFurniture } : p
+          )
+
+          set({
+            projects: updatedProjects,
+            activeProjectId: cow.activeProjectId,
+            furniture: nextFurniture,
+            selectedId: newId,
+            toastMessage: `📋 Duplicated "${target.name}"`,
+          })
+          return newId
+        },
+
         setFurnitureVisible: (id, visible) =>
           set((s) => {
             const cow = checkAndForkSample(s.projects, s.activeProjectId, s)
@@ -857,7 +890,7 @@ export const useAppStore = create<AppStore>()(
         setCatalogSearch: (s) => set({ catalogSearch: s }),
         catalogSortBy: 'name',
         setCatalogSortBy: (s) => set({ catalogSortBy: s }),
-        catalogViewMode: 'grid',
+        catalogViewMode: 'card',
         setCatalogViewMode: (m) => set({ catalogViewMode: m }),
         autoFillCSVOnDrop: true,
         setAutoFillCSVOnDrop: (v) => set({ autoFillCSVOnDrop: v }),
