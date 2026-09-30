@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useAppStore, nextColor } from '@/store/app-store'
 import type { FurnitureItem, Priority, CatalogMode, CatalogLayout } from '@/types'
 import { CatalogSidebar } from './CatalogSidebar'
+import { FurnitureBox3D } from './FurnitureBox3D'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -22,42 +23,6 @@ function newItem(): FurnitureItem {
   }
 }
 
-// ─── CSS 3D Box thumbnail ─────────────────────────────────────────────────────
-
-function CssBox3D({ color, w, d, h }: { color: string; w: number; d: number; h: number }) {
-  const scale = 70 / Math.max(w, d, h)
-  const sw = Math.round(w * scale)
-  const sd = Math.round(d * scale)
-  const sh = Math.round(h * scale)
-  const style: React.CSSProperties = {
-    width: sw, height: sh,
-    position: 'relative',
-    transformStyle: 'preserve-3d',
-    transform: 'rotateX(-25deg) rotateY(35deg)',
-    margin: 'auto',
-  }
-  const faceBase: React.CSSProperties = {
-    position: 'absolute',
-    border: '1px solid rgba(255,255,255,0.2)',
-  }
-  return (
-    <div style={style}>
-      {/* Front */}
-      <div style={{ ...faceBase, width: sw, height: sh, background: color, transform: `translateZ(${sd / 2}px)` }} />
-      {/* Back */}
-      <div style={{ ...faceBase, width: sw, height: sh, background: color, opacity: 0.6, transform: `rotateY(180deg) translateZ(${sd / 2}px)` }} />
-      {/* Right */}
-      <div style={{ ...faceBase, width: sd, height: sh, background: color, opacity: 0.75, transform: `rotateY(90deg) translateZ(${sw - sd / 2}px)` }} />
-      {/* Left */}
-      <div style={{ ...faceBase, width: sd, height: sh, background: color, opacity: 0.75, transform: `rotateY(-90deg) translateZ(${sd / 2}px)` }} />
-      {/* Top */}
-      <div style={{ ...faceBase, width: sw, height: sd, background: color, opacity: 0.9, transform: `rotateX(90deg) translateZ(${sh - sd / 2}px)` }} />
-      {/* Bottom */}
-      <div style={{ ...faceBase, width: sw, height: sd, background: color, opacity: 0.5, transform: `rotateX(-90deg) translateZ(${sd / 2}px)` }} />
-    </div>
-  )
-}
-
 // ─── Card ─────────────────────────────────────────────────────────────────────
 
 function FurnitureCard({ item }: { item: FurnitureItem }) {
@@ -69,8 +34,15 @@ function FurnitureCard({ item }: { item: FurnitureItem }) {
       className={`furniture-card${selected ? ' selected' : ''}`}
       onClick={() => openSidebar(item.id)}
     >
-      <div className="card-thumb" style={{ perspective: 400 }}>
-        <CssBox3D color={item.color} w={item.assembled.w} d={item.assembled.d} h={item.assembled.h} />
+      <div className="card-thumb" style={{ padding: 10 }}>
+        <FurnitureBox3D
+          color={item.color}
+          w={item.assembled.w}
+          d={item.assembled.d}
+          h={item.assembled.h}
+          name={item.name}
+          size={110}
+        />
       </div>
       <div className="card-info">
         <div className="card-name" title={item.name}>{item.name}</div>

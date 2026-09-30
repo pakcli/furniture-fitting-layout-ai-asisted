@@ -1,6 +1,7 @@
 import React from 'react'
 import { useAppStore } from '@/store/app-store'
 import type { Priority } from '@/types'
+import { FurnitureBox3D } from './FurnitureBox3D'
 
 export function CatalogSidebar() {
   const { furniture, sidebarItemId, closeSidebar, updateFurniture, catalogMode } = useAppStore()
@@ -18,17 +19,19 @@ export function CatalogSidebar() {
       </div>
 
       <div className="sidebar-body">
-        {/* 3D preview */}
-        <div className="thumb-3d-wrap" style={{ perspective: 500 }}>
-          <div style={{
-            width: 80, height: 80,
-            background: item.color,
-            borderRadius: 6,
-            transform: 'rotateX(-20deg) rotateY(30deg)',
-            transformStyle: 'preserve-3d',
-            boxShadow: `4px 4px 0 rgba(0,0,0,0.3)`,
-          }} />
-          <div style={{ position: 'absolute', bottom: 6, fontSize: 10, color: 'var(--text-2)' }}>
+        {/* Solid Isometric 3D preview */}
+        <div className="thumb-3d-wrap" style={{ padding: 12, position: 'relative' }}>
+          <div style={{ width: 140, height: 140, margin: 'auto' }}>
+            <FurnitureBox3D
+              color={item.color}
+              w={item.assembled.w}
+              d={item.assembled.d}
+              h={item.assembled.h}
+              name={item.name}
+              size={140}
+            />
+          </div>
+          <div style={{ position: 'absolute', bottom: 6, fontSize: 10, color: 'var(--text-2)', textAlign: 'center', width: '100%', left: 0 }}>
             Drop .glb to replace model
           </div>
         </div>
