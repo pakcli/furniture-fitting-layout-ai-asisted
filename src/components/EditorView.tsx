@@ -416,27 +416,21 @@ function BabylonCanvas() {
     }
   }, [theme])
 
-  // Sync Room Architecture, Furniture Meshes, Ghosts, and Pathways
+  // 1. Static Room Architecture (Floors & Walls) — ONLY rebuilt when room dimensions or theme change!
   useEffect(() => {
     const scene = sceneRef
     if (!scene) return
 
-    // Clear previous transient meshes including floors and walls
+    // Clear previous architectural meshes only
     scene.meshes
       .filter(m =>
-        m.name.startsWith('furn-') ||
-        m.name.startsWith('clearance-') ||
         m.name.startsWith('arch-') ||
-        m.name.startsWith('ghost-') ||
-        m.name.startsWith('pathway-') ||
-        m.name.startsWith('dual-ghost-') ||
-        m.name.startsWith('motion-vector-') ||
         m.name.startsWith('room-floor') ||
         m.name.startsWith('hallway-floor')
       )
       .forEach(m => m.dispose())
 
-    // 1. Dynamic Room Floor
+    // Dynamic Room Floor
     const floor = MeshBuilder.CreateBox('room-floor', { width: roomW, height: 0.02, depth: roomD }, scene)
     const floorMat = new StandardMaterial('floor-mat', scene)
     floorMat.diffuseColor = hexToColor3(theme === 'dark' ? '#1e293b' : '#e2e8f0')
@@ -446,7 +440,7 @@ function BabylonCanvas() {
     floor.position.z = roomD / 2
     floor.position.y = -0.01
 
-    // 2. Dynamic Hallway Floor
+    // Dynamic Hallway Floor
     const hwFloor = MeshBuilder.CreateBox('hallway-floor', { width: doorWidth, height: 0.02, depth: corridorLen }, scene)
     const hwMat = new StandardMaterial('hw-floor-mat', scene)
     hwMat.diffuseColor = hexToColor3(theme === 'dark' ? '#182234' : '#cbd5e1')
@@ -456,7 +450,7 @@ function BabylonCanvas() {
     hwFloor.position.z = -corridorLen / 2
     hwFloor.position.y = -0.01
 
-    // 3. Dynamic Low Architectural Walls
+    // Dynamic Low Architectural Walls
     const wallH = 0.35
     const wallThick = 0.08
     const wallMat = new StandardMaterial('wall-mat', scene)
@@ -482,6 +476,29 @@ function BabylonCanvas() {
     createWall('wall-s-right', roomW - doorRight, wallThick, doorRight + (roomW - doorRight) / 2, -wallThick / 2)
     createWall('hw-wall-w', wallThick, corridorLen, doorLeft - wallThick / 2, -corridorLen / 2)
     createWall('hw-wall-e', wallThick, corridorLen, doorRight + wallThick / 2, -corridorLen / 2)
+  }, [room, theme])
+
+  // 2. Dynamic Furniture Meshes, Material States, Ghosts & Overlays (No architectural disposal!)
+  useEffect(() => {
+    const scene = sceneRef
+    if (!scene) return
+
+    // Clear ONLY transient overlays (ghosts, clearance planes, motion vectors)
+    scene.meshes
+      .filter(m =>
+        m.name.startsWith('clearance-') ||
+        m.name.startsWith('ghost-') ||
+        m.name.startsWith('pathway-') ||
+        m.name.startsWith('dual-ghost-') ||
+        m.name.startsWith('motion-vector-')
+      )
+      .forEach(m => m.dispose())
+
+    // Clean up any deleted furniture meshes
+    const activeFurnIds = new Set(furniture.map(f => f.id))
+    scene.meshes
+      .filter(m => m.name.startsWith('furn-') && !activeFurnIds.has(m.name.replace('furn-', '')))
+      .forEach(m => m.dispose())
 
     // 4. Ghost Sweep Volume & Pathways (The Crucial Visualization)
     const currentStep = plan?.steps[playbackStep]
@@ -595,20 +612,35 @@ function BabylonCanvas() {
         meshAlpha = 0.45
       }
 
-      // Main box mesh
-      const mesh = MeshBuilder.CreateBox(`furn-${f.id}`, {
-        width: f.assembled.w * SCALE,
-        height: f.assembled.h * SCALE,
-        depth: f.assembled.d * SCALE,
-      }, scene)
+      // Main box mesh — reuse existing mesh if dimensions match to prevent any blinking/recreation!
+      const dimKey = `${f.assembled.w}_${f.assembled.d}_${f.assembled.h}`
+      let mesh = scene.getMeshByName(`furn-${f.id}`) as Mesh | null
+      if (mesh && (mesh as any)._dimKey !== dimKey) {
+        mesh.dispose()
+        mesh = null
+      }
+
+      if (!mesh) {
+        mesh = MeshBuilder.CreateBox(`furn-${f.id}`, {
+          width: f.assembled.w * SCALE,
+          height: f.assembled.h * SCALE,
+          depth: f.assembled.d * SCALE,
+        }, scene)
+        ;(mesh as any)._dimKey = dimKey
+        mesh.isPickable = true
+      }
 
       mesh.position.x = posX
       mesh.position.z = posZ
       mesh.position.y = posY
       mesh.rotation.y = rotY
 
-      // Material
-      const mat = new StandardMaterial(`mat-${f.id}`, scene)
+      // Material — reuse existing material to prevent shader recompilation flicker!
+      let mat = scene.getMaterialByName(`mat-${f.id}`) as StandardMaterial | null
+      if (!mat) {
+        mat = new StandardMaterial(`mat-${f.id}`, scene)
+        mesh.material = mat
+      }
       const baseColor = display.materialMode === 'fallback'
         ? display.fallbackColor
         : f.color
@@ -620,9 +652,9 @@ function BabylonCanvas() {
         mat.emissiveColor = hexToColor3('#0284c7').scale(0.3)
       } else if (planIdx === playbackStep) {
         mat.emissiveColor = hexToColor3('#38bdf8').scale(0.25)
+      } else {
+        mat.emissiveColor = Color3.Black()
       }
-
-      mesh.material = mat
 
       // Clean architectural edges
       if (display.showBoundingBox || isSelected || planIdx === playbackStep) {
@@ -631,9 +663,9 @@ function BabylonCanvas() {
         const outlineHex = isSelected ? '#38bdf8' : (planIdx === playbackStep ? '#00e5ff' : display.boundingBoxColor)
         const oc = hexToColor3(outlineHex)
         mesh.edgesColor = new Color4(oc.r, oc.g, oc.b, isSelected ? 1.0 : display.boundingBoxOpacity)
+      } else {
+        mesh.disableEdgesRendering()
       }
-
-      mesh.isPickable = true
 
       // Clearance zone overlay for items in final position
       if (display.showClearanceZone && f.clearance.front && (planIdx <= playbackStep || planIdx === -1)) {
