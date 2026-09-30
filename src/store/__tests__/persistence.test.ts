@@ -40,16 +40,20 @@ describe('Store LocalStorage Persistence', () => {
     })
 
     // Check localStorage key
-    const raw = localStorage.getItem('pack-and-place-storage-v2')
+    const raw = localStorage.getItem('pack-and-place-storage-v3')
     expect(raw).not.toBeNull()
 
     const parsed = JSON.parse(raw!)
     expect(parsed.state).toBeDefined()
-    expect(parsed.state.room.ceilingHeightCm).toBe(285)
     expect(parsed.state.display.materialMode).toBe('texture')
     expect(parsed.state.display.showGhostTrail).toBe(false)
+    expect(parsed.state.projects).toBeDefined()
 
-    const wardrobe = parsed.state.furniture.find((f: any) => f.id === 'p-wardrobe')
+    const activeProject = parsed.state.projects.find((p: any) => p.id === parsed.state.activeProjectId)
+    expect(activeProject).toBeDefined()
+    expect(activeProject.room.ceilingHeightCm).toBe(285)
+
+    const wardrobe = activeProject.furniture.find((f: any) => f.id === 'p-wardrobe')
     expect(wardrobe.position.x).toBe(45)
     expect(wardrobe.position.y).toBe(315)
     expect(wardrobe.rotation).toBe(90)

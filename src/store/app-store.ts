@@ -875,7 +875,7 @@ export const useAppStore = create<AppStore>()(
           const doorWidth = door?.widthCm ?? 180
           const corridor = room.corridors[0]
           const corridorLen = corridor?.lengthCm ?? 140
-          const entranceX = Math.round(doorStart + doorWidth / 2)
+          const entranceX = Math.round(doorStart + doorWidth / 2 - (item.assembled?.w ?? 80) / 2)
           const entranceY = Math.round(-corridorLen)
 
           const newId = `item-${Date.now()}-${Math.floor(Math.random() * 1000)}`
@@ -947,16 +947,16 @@ export const useAppStore = create<AppStore>()(
           const s = get()
           const cow = checkAndForkSample(s.projects, s.activeProjectId, s)
           const { room, furniture, sequenceRows } = s
+          const item = furniture.find(f => f.id === id)
+          if (!item) return
+
           const door = room.doors[0]
           const doorStart = door?.offsetAlongWall ?? 160
           const doorWidth = door?.widthCm ?? 180
           const corridor = room.corridors[0]
           const corridorLen = corridor?.lengthCm ?? 140
-          const entranceX = Math.round(doorStart + doorWidth / 2)
+          const entranceX = Math.round(doorStart + doorWidth / 2 - (item.assembled?.w ?? 80) / 2)
           const entranceY = Math.round(-corridorLen)
-
-          const item = furniture.find(f => f.id === id)
-          if (!item) return
 
           const currentX = item.position?.x ?? 100
           const currentY = item.position?.y ?? 100
@@ -1104,13 +1104,14 @@ export const useAppStore = create<AppStore>()(
         },
 
         snapFurnitureToEntrance: (id, target = 'start') => {
-          const { room } = get()
+          const { room, furniture } = get()
+          const item = furniture.find(f => f.id === id)
           const door = room.doors[0]
           const doorStart = door?.offsetAlongWall ?? 160
           const doorWidth = door?.widthCm ?? 180
           const corridor = room.corridors[0]
           const corridorLen = corridor?.lengthCm ?? 140
-          const entranceX = Math.round(doorStart + doorWidth / 2)
+          const entranceX = Math.round(doorStart + doorWidth / 2 - (item?.assembled?.w ?? 80) / 2)
           const entranceY = Math.round(-corridorLen)
 
           get().updateFurnitureTransformTarget(id, target, { x: entranceX, y: entranceY, rotation: 0 })
@@ -1281,10 +1282,13 @@ export const useAppStore = create<AppStore>()(
         if (!state.projects || state.projects.length === 0) {
           state.projects = factory
         } else {
-          // Ensure factory samples are present in projects
+          // Ensure factory samples are present and up to date
           for (const fs of factory) {
-            if (!state.projects.some(p => p.id === fs.id)) {
+            const existingIdx = state.projects.findIndex(p => p.id === fs.id)
+            if (existingIdx === -1) {
               state.projects.unshift(fs)
+            } else if (state.projects[existingIdx].isSample) {
+              state.projects[existingIdx] = fs
             }
           }
         }

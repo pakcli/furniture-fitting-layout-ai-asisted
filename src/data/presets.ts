@@ -23,8 +23,7 @@ export const MASTER_BEDROOM_ROOM: Room = {
   walkwayMinCm: 60,
 }
 
-// Hallway entrance point for Master Bedroom: X = 160 + 180/2 = 250, Y = -140
-const MB_ENTRANCE = { x: 250, y: -140 }
+// Doorway center: X = 160 + 180/2 = 250. Objects are centered at (doorCenter - w/2) to avoid hallway wall collisions.
 
 export const BEDROOM_PRESETS: FurnitureItem[] = [
   // 1. Wardrobe – northwest corner against north wall (deepest)
@@ -61,7 +60,7 @@ export const BEDROOM_PRESETS: FurnitureItem[] = [
     position: { x: 30, y: 300 },
     rotation: 0,
     placementMode: 'inserting',
-    startPosition: { ...MB_ENTRANCE },
+    startPosition: { x: 200, y: -140 }, // Centered: 250 - 100/2 = 200
     startRotation: 0,
     endPosition: { x: 30, y: 300 },
     endRotation: 0,
@@ -85,7 +84,7 @@ export const BEDROOM_PRESETS: FurnitureItem[] = [
     position: { x: 360, y: 310 },
     rotation: 0,
     placementMode: 'inserting',
-    startPosition: { ...MB_ENTRANCE },
+    startPosition: { x: 195, y: -140 }, // Centered: 250 - 110/2 = 195
     startRotation: 0,
     endPosition: { x: 360, y: 310 },
     endRotation: 0,
@@ -109,7 +108,7 @@ export const BEDROOM_PRESETS: FurnitureItem[] = [
     position: { x: 170, y: 120 },
     rotation: 0,
     placementMode: 'inserting',
-    startPosition: { ...MB_ENTRANCE },
+    startPosition: { x: 170, y: -140 }, // Centered: 250 - 160/2 = 170 (10cm clearance on both sides of 180cm door!)
     startRotation: 0,
     endPosition: { x: 170, y: 120 },
     endRotation: 0,
@@ -133,7 +132,7 @@ export const BEDROOM_PRESETS: FurnitureItem[] = [
     position: { x: 110, y: 240 },
     rotation: 0,
     placementMode: 'inserting',
-    startPosition: { ...MB_ENTRANCE },
+    startPosition: { x: 228, y: -140 }, // Centered: 250 - 45/2 = 227.5 ~ 228
     startRotation: 0,
     endPosition: { x: 110, y: 240 },
     endRotation: 0,
@@ -157,7 +156,7 @@ export const BEDROOM_PRESETS: FurnitureItem[] = [
     position: { x: 345, y: 240 },
     rotation: 0,
     placementMode: 'inserting',
-    startPosition: { ...MB_ENTRANCE },
+    startPosition: { x: 228, y: -140 }, // Centered: 250 - 45/2 = 227.5 ~ 228
     startRotation: 0,
     endPosition: { x: 345, y: 240 },
     endRotation: 0,
@@ -181,7 +180,7 @@ export const BEDROOM_PRESETS: FurnitureItem[] = [
     position: { x: 360, y: 20 },
     rotation: 0,
     placementMode: 'inserting',
-    startPosition: { ...MB_ENTRANCE },
+    startPosition: { x: 195, y: -140 }, // Centered: 250 - 110/2 = 195
     startRotation: 0,
     endPosition: { x: 360, y: 20 },
     endRotation: 0,
@@ -194,7 +193,7 @@ export const BEDROOM_SEQUENCE_ROWS: SequenceStep[] = [
     step_id: 1,
     object_id: 'p-wardrobe',
     object_name: 'Wardrobe 2-door',
-    start_pos_x: MB_ENTRANCE.x, start_pos_y: MB_ENTRANCE.y, start_rot: 0,
+    start_pos_x: 200, start_pos_y: -140, start_rot: 0,
     end_pos_x: 30, end_pos_y: 300, end_rot: 0,
     duration_s: 2.0, easing: 'ease-in-out',
     notes: 'Enters 1st: Deepest north-west corner placement',
@@ -203,7 +202,7 @@ export const BEDROOM_SEQUENCE_ROWS: SequenceStep[] = [
     step_id: 2,
     object_id: 'p-dresser',
     object_name: '6-Drawer Dresser',
-    start_pos_x: MB_ENTRANCE.x, start_pos_y: MB_ENTRANCE.y, start_rot: 0,
+    start_pos_x: 195, start_pos_y: -140, start_rot: 0,
     end_pos_x: 360, end_pos_y: 310, end_rot: 0,
     duration_s: 1.8, easing: 'ease-in-out',
     notes: 'Enters 2nd: North-east corner against back wall',
@@ -212,16 +211,16 @@ export const BEDROOM_SEQUENCE_ROWS: SequenceStep[] = [
     step_id: 3,
     object_id: 'p-bed',
     object_name: 'Queen Bed',
-    start_pos_x: MB_ENTRANCE.x, start_pos_y: MB_ENTRANCE.y, start_rot: 0,
+    start_pos_x: 170, start_pos_y: -140, start_rot: 0,
     end_pos_x: 170, end_pos_y: 120, end_rot: 0,
     duration_s: 2.2, easing: 'ease-in-out',
-    notes: 'Enters 3rd: Central master bed docking',
+    notes: 'Enters 3rd: Central master bed docking (centered)',
   },
   {
     step_id: 4,
     object_id: 'p-ns-left',
     object_name: 'Nightstand (L)',
-    start_pos_x: MB_ENTRANCE.x, start_pos_y: MB_ENTRANCE.y, start_rot: 0,
+    start_pos_x: 228, start_pos_y: -140, start_rot: 0,
     end_pos_x: 110, end_pos_y: 240, end_rot: 0,
     duration_s: 1.2, easing: 'ease-out',
     notes: 'Enters 4th: Left bedside table',
@@ -230,7 +229,7 @@ export const BEDROOM_SEQUENCE_ROWS: SequenceStep[] = [
     step_id: 5,
     object_id: 'p-ns-right',
     object_name: 'Nightstand (R)',
-    start_pos_x: MB_ENTRANCE.x, start_pos_y: MB_ENTRANCE.y, start_rot: 0,
+    start_pos_x: 228, start_pos_y: -140, start_rot: 0,
     end_pos_x: 345, end_pos_y: 240, end_rot: 0,
     duration_s: 1.2, easing: 'ease-out',
     notes: 'Enters 5th: Right bedside table',
@@ -239,7 +238,7 @@ export const BEDROOM_SEQUENCE_ROWS: SequenceStep[] = [
     step_id: 6,
     object_id: 'p-desk',
     object_name: 'Work Desk',
-    start_pos_x: MB_ENTRANCE.x, start_pos_y: MB_ENTRANCE.y, start_rot: 0,
+    start_pos_x: 195, start_pos_y: -140, start_rot: 0,
     end_pos_x: 360, end_pos_y: 20, end_rot: 0,
     duration_s: 1.5, easing: 'ease-in-out',
     notes: 'Enters 6th: South-east corner desk placement',
@@ -259,9 +258,9 @@ export const BEDROOM_PLAN: SolverPlan = {
       transportMode: 'whole',
       action: 'Enter hallway and glide into northwest corner',
       pathNodes: [
-        { x: 250, y: -140, rot: 0 },
-        { x: 250, y: -40,  rot: 0 },
-        { x: 250, y: 60,   rot: 0 },
+        { x: 200, y: -140, rot: 0 },
+        { x: 200, y: -40,  rot: 0 },
+        { x: 200, y: 60,   rot: 0 },
         { x: 140, y: 190,  rot: 0 },
         { x: 30,  y: 300,  rot: 0 },
       ],
@@ -273,9 +272,9 @@ export const BEDROOM_PLAN: SolverPlan = {
       transportMode: 'whole',
       action: 'Enter hallway and dock into northeast corner',
       pathNodes: [
-        { x: 250, y: -140, rot: 0 },
-        { x: 250, y: -40,  rot: 0 },
-        { x: 250, y: 80,   rot: 0 },
+        { x: 195, y: -140, rot: 0 },
+        { x: 195, y: -40,  rot: 0 },
+        { x: 195, y: 80,   rot: 0 },
         { x: 320, y: 210,  rot: 0 },
         { x: 360, y: 310,  rot: 0 },
       ],
@@ -287,10 +286,10 @@ export const BEDROOM_PLAN: SolverPlan = {
       transportMode: 'whole',
       action: 'Enter through wide 1.8m door and dock in center',
       pathNodes: [
-        { x: 250, y: -140, rot: 0 },
-        { x: 250, y: -40,  rot: 0 },
-        { x: 250, y: 40,   rot: 0 },
-        { x: 210, y: 80,   rot: 0 },
+        { x: 170, y: -140, rot: 0 },
+        { x: 170, y: -40,  rot: 0 },
+        { x: 170, y: 40,   rot: 0 },
+        { x: 170, y: 80,   rot: 0 },
         { x: 170, y: 120,  rot: 0 },
       ],
     },
@@ -301,8 +300,8 @@ export const BEDROOM_PLAN: SolverPlan = {
       transportMode: 'whole',
       action: 'Carry along west walkway to bedside',
       pathNodes: [
-        { x: 250, y: -140, rot: 0 },
-        { x: 250, y: 0,    rot: 0 },
+        { x: 228, y: -140, rot: 0 },
+        { x: 228, y: 0,    rot: 0 },
         { x: 110, y: 100,  rot: 0 },
         { x: 110, y: 240,  rot: 0 },
       ],
@@ -314,8 +313,8 @@ export const BEDROOM_PLAN: SolverPlan = {
       transportMode: 'whole',
       action: 'Carry along east walkway to bedside',
       pathNodes: [
-        { x: 250, y: -140, rot: 0 },
-        { x: 250, y: 0,    rot: 0 },
+        { x: 228, y: -140, rot: 0 },
+        { x: 228, y: 0,    rot: 0 },
         { x: 345, y: 100,  rot: 0 },
         { x: 345, y: 240,  rot: 0 },
       ],
@@ -327,8 +326,8 @@ export const BEDROOM_PLAN: SolverPlan = {
       transportMode: 'whole',
       action: 'Place in southeast corner near entrance',
       pathNodes: [
-        { x: 250, y: -140, rot: 0 },
-        { x: 250, y: 0,    rot: 0 },
+        { x: 195, y: -140, rot: 0 },
+        { x: 195, y: 0,    rot: 0 },
         { x: 360, y: 20,   rot: 0 },
       ],
     },
@@ -374,7 +373,7 @@ export const COMPACT_STUDIO_PRESETS: FurnitureItem[] = [
     position: { x: 30, y: 250 },
     rotation: 0,
     placementMode: 'inserting',
-    startPosition: { ...CS_ENTRANCE },
+    startPosition: { x: 148, y: -130 }, // Centered: 190 - 85/2 = 147.5 ~ 148
     startRotation: 0,
     endPosition: { x: 30, y: 250 },
     endRotation: 0,
@@ -383,7 +382,7 @@ export const COMPACT_STUDIO_PRESETS: FurnitureItem[] = [
 
   // 2. Studio Bed – 150cm wide! Door is 100cm!
   // MUST ROTATE 90° (width becomes 90cm) to pass through 1m door!
-  // Once inside room, rotates to 0° and docks at (160, 210).
+  // Center is at 190, so posX = 115 + 150/2 = 190 (5cm clearance on both sides!)
   {
     id: 'cs-bed',
     name: 'Studio Bed (1.5m wide)',
@@ -417,7 +416,7 @@ export const COMPACT_STUDIO_PRESETS: FurnitureItem[] = [
     position: { x: 160, y: 210 },
     rotation: 0,
     placementMode: 'inserting',
-    startPosition: { ...CS_ENTRANCE },
+    startPosition: { x: 115, y: -130 }, // Centered: 190 - 150/2 = 115
     startRotation: 90, // Enters turned sideways!
     endPosition: { x: 160, y: 210 },
     endRotation: 0,
@@ -441,7 +440,7 @@ export const COMPACT_STUDIO_PRESETS: FurnitureItem[] = [
     position: { x: 325, y: 240 },
     rotation: 0,
     placementMode: 'inserting',
-    startPosition: { ...CS_ENTRANCE },
+    startPosition: { x: 168, y: -130 }, // Centered: 190 - 45/2 = 167.5 ~ 168
     startRotation: 0,
     endPosition: { x: 325, y: 240 },
     endRotation: 0,
@@ -465,7 +464,7 @@ export const COMPACT_STUDIO_PRESETS: FurnitureItem[] = [
     position: { x: 30, y: 60 },
     rotation: 0,
     placementMode: 'inserting',
-    startPosition: { ...CS_ENTRANCE },
+    startPosition: { x: 145, y: -130 }, // Centered: 190 - 90/2 = 145
     startRotation: 0,
     endPosition: { x: 30, y: 60 },
     endRotation: 0,
@@ -489,7 +488,7 @@ export const COMPACT_STUDIO_PRESETS: FurnitureItem[] = [
     position: { x: 280, y: 40 },
     rotation: 0,
     placementMode: 'inserting',
-    startPosition: { ...CS_ENTRANCE },
+    startPosition: { x: 153, y: -130 }, // Centered: 190 - 75/2 = 152.5 ~ 153
     startRotation: 0,
     endPosition: { x: 280, y: 40 },
     endRotation: 0,
@@ -502,7 +501,7 @@ export const STUDIO_SEQUENCE_ROWS: SequenceStep[] = [
     step_id: 1,
     object_id: 'cs-wardrobe',
     object_name: 'Tall Wardrobe',
-    start_pos_x: CS_ENTRANCE.x, start_pos_y: CS_ENTRANCE.y, start_rot: 0,
+    start_pos_x: 148, start_pos_y: -130, start_rot: 0,
     end_pos_x: 30, end_pos_y: 250, end_rot: 0,
     duration_s: 1.8, easing: 'ease-in-out',
     notes: 'Enters 1st: Deep northwest corner wardrobe',
@@ -511,7 +510,7 @@ export const STUDIO_SEQUENCE_ROWS: SequenceStep[] = [
     step_id: 2,
     object_id: 'cs-bed',
     object_name: 'Studio Bed (1.5m wide)',
-    start_pos_x: CS_ENTRANCE.x, start_pos_y: CS_ENTRANCE.y, start_rot: 90,
+    start_pos_x: 115, start_pos_y: -130, start_rot: 90,
     end_pos_x: 160, end_pos_y: 210, end_rot: 0,
     duration_s: 2.8, easing: 'ease-in-out',
     notes: '⚡ Rotates 90° sideways to squeeze through 1.0m door, then aligns to 0°',
@@ -520,7 +519,7 @@ export const STUDIO_SEQUENCE_ROWS: SequenceStep[] = [
     step_id: 3,
     object_id: 'cs-nightstand',
     object_name: 'Bedside Table',
-    start_pos_x: CS_ENTRANCE.x, start_pos_y: CS_ENTRANCE.y, start_rot: 0,
+    start_pos_x: 168, start_pos_y: -130, start_rot: 0,
     end_pos_x: 325, end_pos_y: 240, end_rot: 0,
     duration_s: 1.2, easing: 'ease-out',
     notes: 'Enters 3rd: Compact bedside table',
@@ -529,7 +528,7 @@ export const STUDIO_SEQUENCE_ROWS: SequenceStep[] = [
     step_id: 4,
     object_id: 'cs-desk',
     object_name: 'Compact Study Desk',
-    start_pos_x: CS_ENTRANCE.x, start_pos_y: CS_ENTRANCE.y, start_rot: 0,
+    start_pos_x: 145, start_pos_y: -130, start_rot: 0,
     end_pos_x: 30, end_pos_y: 60, end_rot: 0,
     duration_s: 1.4, easing: 'ease-in-out',
     notes: 'Enters 4th: Study desk along west wall',
@@ -538,7 +537,7 @@ export const STUDIO_SEQUENCE_ROWS: SequenceStep[] = [
     step_id: 5,
     object_id: 'cs-armchair',
     object_name: 'Lounge Armchair',
-    start_pos_x: CS_ENTRANCE.x, start_pos_y: CS_ENTRANCE.y, start_rot: 0,
+    start_pos_x: 153, start_pos_y: -130, start_rot: 0,
     end_pos_x: 280, end_pos_y: 40, end_rot: 0,
     duration_s: 1.2, easing: 'ease-out',
     notes: 'Enters 5th: Lounge armchair near entrance window',
@@ -558,9 +557,9 @@ export const STUDIO_PLAN: SolverPlan = {
       transportMode: 'whole',
       action: 'Enter hallway and glide into northwest corner',
       pathNodes: [
-        { x: 190, y: -130, rot: 0 },
-        { x: 190, y: -30,  rot: 0 },
-        { x: 190, y: 40,   rot: 0 },
+        { x: 148, y: -130, rot: 0 },
+        { x: 148, y: -30,  rot: 0 },
+        { x: 148, y: 40,   rot: 0 },
         { x: 90,  y: 150,  rot: 0 },
         { x: 30,  y: 250,  rot: 0 },
       ],
@@ -572,11 +571,11 @@ export const STUDIO_PLAN: SolverPlan = {
       transportMode: 'doors-off',
       action: 'Rotate 90° sideways through 1.0m door, then rotate back to 0° inside room',
       pathNodes: [
-        { x: 190, y: -130, rot: 90 }, // Enters sideways
-        { x: 190, y: -30,  rot: 90 }, // Passing threshold
-        { x: 190, y: 20,   rot: 90 }, // Inside doorway
-        { x: 180, y: 90,   rot: 60 }, // Turning in room
-        { x: 170, y: 150,  rot: 30 }, // Unwinding
+        { x: 115, y: -130, rot: 90 }, // Enters sideways, centered at 190 (5cm clearance)
+        { x: 115, y: -30,  rot: 90 }, // Passing threshold
+        { x: 115, y: 20,   rot: 90 }, // Inside doorway
+        { x: 130, y: 90,   rot: 60 }, // Turning in room
+        { x: 145, y: 150,  rot: 30 }, // Unwinding
         { x: 160, y: 190,  rot: 0 },  // Aligned
         { x: 160, y: 210,  rot: 0 },  // Docked
       ],
@@ -588,8 +587,8 @@ export const STUDIO_PLAN: SolverPlan = {
       transportMode: 'whole',
       action: 'Carry along east wall to bed',
       pathNodes: [
-        { x: 190, y: -130, rot: 0 },
-        { x: 190, y: 0,    rot: 0 },
+        { x: 168, y: -130, rot: 0 },
+        { x: 168, y: 0,    rot: 0 },
         { x: 280, y: 120,  rot: 0 },
         { x: 325, y: 240,  rot: 0 },
       ],
@@ -601,8 +600,8 @@ export const STUDIO_PLAN: SolverPlan = {
       transportMode: 'whole',
       action: 'Place along west wall',
       pathNodes: [
-        { x: 190, y: -130, rot: 0 },
-        { x: 190, y: 0,    rot: 0 },
+        { x: 145, y: -130, rot: 0 },
+        { x: 145, y: 0,    rot: 0 },
         { x: 30,  y: 60,   rot: 0 },
       ],
     },
@@ -613,8 +612,8 @@ export const STUDIO_PLAN: SolverPlan = {
       transportMode: 'whole',
       action: 'Place in southeast corner',
       pathNodes: [
-        { x: 190, y: -130, rot: 0 },
-        { x: 190, y: 0,    rot: 0 },
+        { x: 153, y: -130, rot: 0 },
+        { x: 153, y: 0,    rot: 0 },
         { x: 280, y: 40,   rot: 0 },
       ],
     },

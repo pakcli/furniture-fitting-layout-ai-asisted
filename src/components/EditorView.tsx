@@ -201,7 +201,8 @@ function BabylonCanvas() {
   }
 
   // Camera framing with strict aspect-ratio preservation (prevents stretching/squishing in 2D and 3D)
-  const updateCameraFraming = (mode: '3d' | '2d') => {
+  // When resetView is false (e.g. during selection, moving objects, or resize), preserves user's current camera angle and zoom!
+  const updateCameraFraming = (mode: '3d' | '2d', resetView = false) => {
     const camera = cameraRef
     const canvas = canvasRef.current
     if (!camera || !canvas) return
@@ -218,9 +219,11 @@ function BabylonCanvas() {
 
     if (mode === '2d') {
       camera.mode = ArcRotateCamera.ORTHOGRAPHIC_CAMERA
-      camera.alpha = -Math.PI / 2
-      camera.beta = 0.0001 // looking directly straight down
-      camera.setTarget(new Vector3(centerX, 0, centerZ))
+      if (resetView || camera.beta !== 0.0001) {
+        camera.alpha = -Math.PI / 2
+        camera.beta = 0.0001 // looking directly straight down
+        camera.setTarget(new Vector3(centerX, 0, centerZ))
+      }
 
       // Keep aspect ratio strictly 1:1 with canvas pixel aspect ratio
       let halfW: number
@@ -242,24 +245,26 @@ function BabylonCanvas() {
       camera.orthoBottom = -halfH
     } else {
       camera.mode = ArcRotateCamera.PERSPECTIVE_CAMERA
-      camera.alpha = -Math.PI / 3
-      camera.beta = Math.PI / 3.4
-      camera.setTarget(new Vector3(centerX, 0.4, centerZ))
+      if (resetView) {
+        camera.alpha = -Math.PI / 3
+        camera.beta = Math.PI / 3.4
+        camera.setTarget(new Vector3(centerX, 0.4, centerZ))
 
-      // Calculate radius so room stays comfortably framed regardless of shrink
-      const maxDim = Math.max(roomW, roomD)
-      const targetRadius = aspect < 1.0
-        ? (maxDim / aspect) * 1.5 + 3.0
-        : maxDim * 1.4 + 3.0
-      camera.radius = Math.max(7.0, Math.min(targetRadius, 15.0))
+        // Calculate radius so room stays comfortably framed regardless of shrink
+        const maxDim = Math.max(roomW, roomD)
+        const targetRadius = aspect < 1.0
+          ? (maxDim / aspect) * 1.5 + 3.0
+          : maxDim * 1.4 + 3.0
+        camera.radius = Math.max(7.0, Math.min(targetRadius, 15.0))
+      }
     }
   }
 
-  // Camera view switcher
+  // Camera view switcher (explicit user action: reset view)
   const switchView = (mode: '3d' | '2d') => {
     setLocalViewMode(mode)
     setDisplay({ viewMode: mode })
-    updateCameraFraming(mode)
+    updateCameraFraming(mode, true)
   }
 
   // Animation loop for smooth playback (runs uninterrupted while playing)
@@ -368,16 +373,16 @@ function BabylonCanvas() {
       engine.runRenderLoop(() => scene?.render())
     }
 
-    // Force correct dimensions and camera framing
+    // Force correct dimensions and camera framing (initial load resets to default frame)
     engine.resize()
-    updateCameraFraming(display.viewMode ?? '3d')
+    updateCameraFraming(display.viewMode ?? '3d', true)
 
-    // ResizeObserver on canvas itself — handles grid columns & catalog panel resizing
+    // ResizeObserver on canvas itself — preserves camera alpha, beta, and zoom on panel resizing
     const ro = new ResizeObserver(() => {
       if (engineRef && !engineRef.isDisposed) {
         engineRef.resize()
         const currentMode = useAppStore.getState().display.viewMode ?? '3d'
-        updateCameraFraming(currentMode)
+        updateCameraFraming(currentMode, false)
       }
     })
     ro.observe(canvas)
@@ -386,7 +391,7 @@ function BabylonCanvas() {
       if (engineRef && !engineRef.isDisposed) {
         engineRef.resize()
         const currentMode = useAppStore.getState().display.viewMode ?? '3d'
-        updateCameraFraming(currentMode)
+        updateCameraFraming(currentMode, false)
       }
     }
     window.addEventListener('resize', handleResize)
@@ -394,7 +399,7 @@ function BabylonCanvas() {
     requestAnimationFrame(() => {
       if (engineRef && !engineRef.isDisposed) {
         engineRef.resize()
-        updateCameraFraming(display.viewMode ?? '3d')
+        updateCameraFraming(display.viewMode ?? '3d', false)
       }
     })
 
@@ -729,8 +734,6 @@ function BabylonCanvas() {
         trajLine.color = new Color3(0.22, 0.74, 0.97)
       }
     }
-
-    updateCameraFraming(display.viewMode ?? '3d')
   }, [furniture, room, display, selectedId, theme, plan, playbackStep])
 
   // High-performance smooth transform update for active furniture item (NO mesh disposal/recreation!)
