@@ -66,9 +66,9 @@ export function ResultsPanel() {
         <button
           className="btn btn-sm w-full mt-2"
           onClick={resetToPresets}
-          title="Reset to clean Bedroom preset layout"
+          title={`Reset to clean ${room.name} layout`}
         >
-          ↺ Reset Bedroom Demo
+          ↺ Reset Preset ({room.name.split('(')[0].trim()})
         </button>
       </div>
 

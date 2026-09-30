@@ -5,7 +5,13 @@ import type {
   FurnitureItem, Room, SolverPlan, PlanStep,
   Theme, CatalogMode, CatalogLayout, DisplaySettings,
 } from '@/types'
-import { BEDROOM_PRESETS, makePresets } from '@/data/presets'
+import {
+  MASTER_BEDROOM_ROOM,
+  COMPACT_STUDIO_ROOM,
+  ROOM_PRESETS,
+  BEDROOM_PRESETS,
+  makePresets,
+} from '@/data/presets'
 
 // ─── Default values ───────────────────────────────────────────────────────────
 
@@ -57,6 +63,7 @@ interface AppStore {
   // Environment
   room: Room
   setRoom: (r: Room) => void
+  selectRoomPreset: (presetId: string) => void
 
   // Furniture catalog
   furniture: FurnitureItem[]
@@ -127,11 +134,23 @@ export const useAppStore = create<AppStore>()(
   persist(
     temporal(
       (set, get) => ({
-        room: DEFAULT_ROOM,
+        room: MASTER_BEDROOM_ROOM,
         setRoom: (r) => set({ room: r }),
+        selectRoomPreset: (presetId) => {
+          const target = ROOM_PRESETS.find(p => p.id === presetId) ?? ROOM_PRESETS[0]
+          set({
+            room: target.room,
+            furniture: makePresets(target.id),
+            plan: null,
+            playbackStep: 0,
+            playbackProgress: 1.0,
+            playbackPlaying: false,
+            selectedId: null,
+          })
+        },
 
         // Initialize with Master Bedroom preset
-        furniture: makePresets(),
+        furniture: makePresets('room-master-bedroom'),
         setFurniture: (items) => set({ furniture: items }),
         addFurniture: (f) => set((s) => ({ furniture: [...s.furniture, f] })),
         updateFurniture: (id, patch) =>
@@ -144,16 +163,19 @@ export const useAppStore = create<AppStore>()(
           set((s) => ({
             furniture: s.furniture.map((f) => (f.id === id ? { ...f, visible } : f)),
           })),
-        resetToPresets: () =>
+        resetToPresets: () => {
+          const currentRoomId = get().room.id
+          const target = ROOM_PRESETS.find(p => p.id === currentRoomId) ?? ROOM_PRESETS[0]
           set({
-            furniture: makePresets(),
-            room: DEFAULT_ROOM,
+            furniture: makePresets(target.id),
+            room: target.room,
             plan: null,
             playbackStep: 0,
             playbackProgress: 1.0,
             playbackPlaying: false,
             selectedId: null,
-          }),
+          })
+        },
 
         selectedId: null,
         setSelectedId: (id) => set({ selectedId: id }),

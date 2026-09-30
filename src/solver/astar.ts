@@ -61,17 +61,12 @@ export function runAStar(opts: AStarOptions): PathResult {
     startX, startY, goalX, goalY, goalRot,
     agentW, agentD, roomW, roomH, hallway, blockers,
   } = opts
-  const maxNodes = opts.maxNodes ?? 25_000
+  const maxNodes = opts.maxNodes ?? 35_000
 
-  const start: AStarNode = {
-    x: snap(startX, GRID_CM),
-    y: snap(startY, GRID_CM),
-    rot: 0,
-  }
   const goal: AStarNode = {
     x: snap(goalX, GRID_CM),
     y: snap(goalY, GRID_CM),
-    rot: goalRot,
+    rot: ((goalRot % 360) + 360) % 360,
   }
 
   /** Check if a state is valid (no collisions with obstacles, within room/hallway) */
@@ -80,7 +75,6 @@ export function runAStar(opts: AStarOptions): PathResult {
 
     // Check inside room/hallway
     if (!isInsideRoomOrHallway(obb, roomW, roomH, hallway)) {
-      // If at final target, allow slight wall touch
       if (!isFinalTarget) return false
     }
 
@@ -103,6 +97,35 @@ export function runAStar(opts: AStarOptions): PathResult {
     }
   }
 
+  // Determine starting rotation in hallway/door:
+  // If goalRot doesn't fit in hallway (e.g. bed width 150cm > door 100cm),
+  // test candidate rotations [goalRot, 0, 90, 270] to find an orientation that fits.
+  const candidateRotations = [goal.rot, 0, 90, 270]
+  let startRot: number | null = null
+  const snappedStartX = snap(startX, GRID_CM)
+  const snappedStartY = snap(startY, GRID_CM)
+
+  for (const r of candidateRotations) {
+    if (isValid({ x: snappedStartX, y: snappedStartY, rot: r })) {
+      startRot = r
+      break
+    }
+  }
+
+  if (startRot === null) {
+    return {
+      found: false,
+      path: [],
+      stallReason: `Furniture (${agentW}×${agentD}cm) exceeds entrance passage clearance at all orientations`,
+    }
+  }
+
+  const start: AStarNode = {
+    x: snappedStartX,
+    y: snappedStartY,
+    rot: startRot,
+  }
+
   const gScore = new Map<string, number>()
   const parent = new Map<string, AStarNode | null>()
   const startKey = key(start)
@@ -110,9 +133,17 @@ export function runAStar(opts: AStarOptions): PathResult {
   gScore.set(startKey, 0)
   parent.set(startKey, null)
 
+  function heuristicCost(node: AStarNode): number {
+    const dx = (node.x - goal.x) / GRID_CM
+    const dy = (node.y - goal.y) / GRID_CM
+    let dRot = Math.abs(node.rot - goal.rot) % 360
+    if (dRot > 180) dRot = 360 - dRot
+    return Math.hypot(dx, dy) + (dRot / 90) * 0.8
+  }
+
   interface QItem { cost: number; node: AStarNode }
   const open = new MinPriorityQueue<QItem>((item) => item.cost)
-  open.enqueue({ cost: heuristic(start, goal), node: start })
+  open.enqueue({ cost: heuristicCost(start), node: start })
 
   let explored = 0
 
@@ -123,51 +154,104 @@ export function runAStar(opts: AStarOptions): PathResult {
     explored++
 
     const distToGoal = Math.hypot(current.x - goal.x, current.y - goal.y)
-    if (distToGoal <= GRID_CM) {
-      // Reconstruct path
-      const path: AStarNode[] = [{ x: goal.x, y: goal.y, rot: goal.rot }]
+    let curRotDiff = Math.abs(current.rot - goal.rot) % 360
+    if (curRotDiff > 180) curRotDiff = 360 - curRotDiff
+
+    // Goal reached if within 1 grid unit of target position and aligned in rotation
+    if (distToGoal <= GRID_CM && curRotDiff < 10) {
+      // Reconstruct raw path
+      const rawPath: AStarNode[] = [{ x: goal.x, y: goal.y, rot: goal.rot }]
       let cur: AStarNode | null = current
       while (cur) {
-        path.unshift(cur)
+        rawPath.unshift(cur)
         cur = parent.get(key(cur)) ?? null
         if (cur === null) break
       }
+
+      // Smooth path: if there are rotational jumps, subdivide smoothly for playback
+      const path: AStarNode[] = []
+      for (let i = 0; i < rawPath.length; i++) {
+        const curr = rawPath[i]
+        if (path.length > 0) {
+          const prev = path[path.length - 1]
+          let rDiff = curr.rot - prev.rot
+          if (rDiff > 180) rDiff -= 360
+          if (rDiff < -180) rDiff += 360
+          if (Math.abs(rDiff) > 35) {
+            // Insert intermediate rotation step
+            const midRot = ((prev.rot + rDiff / 2) % 360 + 360) % 360
+            path.push({
+              x: Math.round((prev.x + curr.x) / 2),
+              y: Math.round((prev.y + curr.y) / 2),
+              rot: midRot,
+            })
+          }
+        }
+        path.push(curr)
+      }
+
       return { found: true, path }
     }
 
     const ck = key(current)
     const g = gScore.get(ck) ?? Infinity
 
-    // Translations: 8 directions
+    // Candidate neighbors
+    const neighbors: { node: AStarNode; stepCost: number }[] = []
+
+    // 1. Translations (keeping current rotation)
     for (const dx of [-GRID_CM, 0, GRID_CM]) {
       for (const dy of [-GRID_CM, 0, GRID_CM]) {
         if (dx === 0 && dy === 0) continue
-
         const nextX = current.x + dx
         const nextY = current.y + dy
-
-        // Rotation transitions smoothly to goal rotation as we approach goal
-        const distFromGoal = Math.hypot(nextX - goal.x, nextY - goal.y)
-        const nextRot = distFromGoal < 40 ? goal.rot : 0
-
-        const nb: AStarNode = { x: nextX, y: nextY, rot: nextRot }
-        const nbk = key(nb)
-
-        if (!isValid(nb)) continue
-
         const stepCost = (dx !== 0 && dy !== 0) ? 1.414 : 1.0
-        const tentativeG = g + stepCost
 
-        if (tentativeG < (gScore.get(nbk) ?? Infinity)) {
-          gScore.set(nbk, tentativeG)
-          parent.set(nbk, current)
-          open.enqueue({ cost: tentativeG + heuristic(nb, goal), node: nb })
-        }
+        neighbors.push({
+          node: { x: nextX, y: nextY, rot: current.rot },
+          stepCost,
+        })
+      }
+    }
+
+    // 2. Rotations (if not yet at goal rotation, test rotating at current location)
+    if (curRotDiff > 0) {
+      // Step rotation towards goal
+      let delta = goal.rot - current.rot
+      if (delta > 180) delta -= 360
+      if (delta < -180) delta += 360
+      const stepDeg = Math.sign(delta) * Math.min(30, Math.abs(delta))
+      const nextRot = ((current.rot + stepDeg) % 360 + 360) % 360
+
+      neighbors.push({
+        node: { x: current.x, y: current.y, rot: nextRot },
+        stepCost: 0.6,
+      })
+
+      // Also try rotating directly to goal rotation if in open space
+      if (Math.abs(delta) > 30) {
+        neighbors.push({
+          node: { x: current.x, y: current.y, rot: goal.rot },
+          stepCost: 0.8,
+        })
+      }
+    }
+
+    // Process neighbors
+    for (const { node: nb, stepCost } of neighbors) {
+      if (!isValid(nb)) continue
+
+      const nbk = key(nb)
+      const tentativeG = g + stepCost
+
+      if (tentativeG < (gScore.get(nbk) ?? Infinity)) {
+        gScore.set(nbk, tentativeG)
+        parent.set(nbk, current)
+        open.enqueue({ cost: tentativeG + heuristicCost(nb), node: nb })
       }
     }
   }
 
-  // Fallback: If strict grid search stopped close or got stuck, try straight waypoint
   return {
     found: false,
     path: [],

@@ -7,6 +7,7 @@ import {
 import { useAppStore } from '@/store/app-store'
 import { DisplaySettings as DisplaySettingsPanel } from '@/components/DisplaySettings'
 import { ResultsPanel } from '@/components/ResultsPanel'
+import { ROOM_PRESETS } from '@/data/presets'
 import { furnitureToOBB, satTest } from '@/solver/obb-sat'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -174,13 +175,46 @@ function SimulationTimelineDock() {
 // ─── Left panel (Room & Selected Furniture) ───────────────────────────────────
 
 function LeftPanel() {
-  const { furniture, selectedId, updateFurniture, removeFurniture, room, setRoom } = useAppStore()
+  const {
+    furniture, selectedId, updateFurniture, removeFurniture,
+    room, setRoom, selectRoomPreset,
+  } = useAppStore()
   const selected = furniture.find(f => f.id === selectedId)
 
   return (
     <div className="editor-left">
+      {/* Room Preset Selector */}
       <div className="panel-section">
-        <div className="section-title">Master Bedroom Suite</div>
+        <div className="section-title">Room Layout Preset</div>
+        <select
+          value={room.id}
+          onChange={e => selectRoomPreset(e.target.value)}
+          style={{
+            width: '100%',
+            padding: '5px 8px',
+            fontSize: 12,
+            fontWeight: 600,
+            borderRadius: 5,
+            background: 'var(--surface2)',
+            color: 'var(--text)',
+            border: '1px solid var(--border)',
+          }}
+        >
+          {ROOM_PRESETS.map(p => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+        <div className="text-muted text-xs mt-1" style={{ lineHeight: 1.35 }}>
+          {room.id === 'room-compact-studio'
+            ? '⚡ 1.0m narrow door: Studio Bed must rotate 90° to fit through hallway!'
+            : '🚪 1.8m wide entrance hallway into 500×380cm bedroom.'}
+        </div>
+      </div>
+
+      <div className="panel-section">
+        <div className="section-title">Room Specs</div>
         <div className="field-row">
           <label>Ceiling H</label>
           <input
@@ -276,7 +310,7 @@ function LeftPanel() {
 function BabylonCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const {
-    furniture, display, setDisplay, selectedId, setSelectedId,
+    furniture, room, display, setDisplay, selectedId, setSelectedId,
     theme, plan, playbackStep, setPlaybackStep,
     playbackPlaying, setPlaybackPlaying,
     playbackProgress, setPlaybackProgress,
@@ -290,6 +324,28 @@ function BabylonCanvas() {
     cream: '#fefce8',
   }
 
+  // Dynamic room dimensions in world units (1 cm = 0.01 units)
+  const SCALE = 0.01
+  const walls = room.walls
+  let roomWidthCm = 0, roomHeightCm = 0
+  for (const w of walls) {
+    roomWidthCm = Math.max(roomWidthCm, w.x1, w.x2)
+    roomHeightCm = Math.max(roomHeightCm, w.y1, w.y2)
+  }
+  const door = room.doors[0]
+  const doorStartCm = door?.offsetAlongWall ?? 160
+  const doorWidthCm = door?.widthCm ?? 180
+  const corridor = room.corridors[0]
+  const corridorLengthCm = corridor?.lengthCm ?? 140
+
+  const roomW = (roomWidthCm || 500) * SCALE
+  const roomD = (roomHeightCm || 380) * SCALE
+  const doorLeft = doorStartCm * SCALE
+  const doorWidth = doorWidthCm * SCALE
+  const doorRight = doorLeft + doorWidth
+  const corridorLen = corridorLengthCm * SCALE
+  const hallwayCenterX = doorLeft + doorWidth / 2
+
   // Camera view switcher
   const switchView = (mode: '3d' | '2d') => {
     setLocalViewMode(mode)
@@ -301,17 +357,17 @@ function BabylonCanvas() {
       camera.mode = ArcRotateCamera.ORTHOGRAPHIC_CAMERA
       camera.alpha = -Math.PI / 2
       camera.beta = 0.001 // looking directly straight down
-      camera.setTarget(new Vector3(2.5, 0, 1.3))
-      camera.orthoTop = 3.6
-      camera.orthoBottom = -2.4
-      camera.orthoLeft = -1.0
-      camera.orthoRight = 6.0
+      camera.setTarget(new Vector3(roomW / 2, 0, roomD / 2 - 0.2))
+      camera.orthoTop = roomD + 1.2
+      camera.orthoBottom = -corridorLen - 1.2
+      camera.orthoLeft = -1.2
+      camera.orthoRight = roomW + 1.2
     } else {
       camera.mode = ArcRotateCamera.PERSPECTIVE_CAMERA
       camera.alpha = -Math.PI / 3
       camera.beta = Math.PI / 3.4
-      camera.radius = 11.5
-      camera.setTarget(new Vector3(2.5, 0.4, 1.6))
+      camera.radius = roomW > 4.5 ? 11.5 : 9.5
+      camera.setTarget(new Vector3(roomW / 2, 0.4, roomD / 2))
     }
   }
 
@@ -419,48 +475,40 @@ function BabylonCanvas() {
     const scene = sceneRef
     if (!scene) return
 
-    // Clear previous transient meshes
+    // Clear previous transient meshes including floors and walls
     scene.meshes
       .filter(m =>
         m.name.startsWith('furn-') ||
         m.name.startsWith('clearance-') ||
         m.name.startsWith('arch-') ||
         m.name.startsWith('ghost-') ||
-        m.name.startsWith('pathway-')
+        m.name.startsWith('pathway-') ||
+        m.name.startsWith('room-floor') ||
+        m.name.startsWith('hallway-floor')
       )
       .forEach(m => m.dispose())
 
-    const SCALE = 0.01 // 1 cm = 0.01 units
-    const roomW = 5.0
-    const roomD = 3.8
-
-    // 1. Room Floor
-    let floor = scene.getMeshByName('room-floor') as Mesh
-    if (!floor) {
-      floor = MeshBuilder.CreateBox('room-floor', { width: roomW, height: 0.02, depth: roomD }, scene)
-      const floorMat = new StandardMaterial('floor-mat', scene)
-      floorMat.diffuseColor = hexToColor3(theme === 'dark' ? '#1e293b' : '#e2e8f0')
-      floorMat.specularColor = new Color3(0.05, 0.05, 0.05)
-      floor.material = floorMat
-    }
+    // 1. Dynamic Room Floor
+    const floor = MeshBuilder.CreateBox('room-floor', { width: roomW, height: 0.02, depth: roomD }, scene)
+    const floorMat = new StandardMaterial('floor-mat', scene)
+    floorMat.diffuseColor = hexToColor3(theme === 'dark' ? '#1e293b' : '#e2e8f0')
+    floorMat.specularColor = new Color3(0.05, 0.05, 0.05)
+    floor.material = floorMat
     floor.position.x = roomW / 2
     floor.position.z = roomD / 2
     floor.position.y = -0.01
 
-    // 2. Hallway Floor (x: 1.6m to 3.4m, z: -1.4m to 0m)
-    let hwFloor = scene.getMeshByName('hallway-floor') as Mesh
-    if (!hwFloor) {
-      hwFloor = MeshBuilder.CreateBox('hallway-floor', { width: 1.8, height: 0.02, depth: 1.4 }, scene)
-      const hwMat = new StandardMaterial('hw-floor-mat', scene)
-      hwMat.diffuseColor = hexToColor3(theme === 'dark' ? '#182234' : '#cbd5e1')
-      hwMat.specularColor = new Color3(0.05, 0.05, 0.05)
-      hwFloor.material = hwMat
-    }
-    hwFloor.position.x = 2.5
-    hwFloor.position.z = -0.7
+    // 2. Dynamic Hallway Floor
+    const hwFloor = MeshBuilder.CreateBox('hallway-floor', { width: doorWidth, height: 0.02, depth: corridorLen }, scene)
+    const hwMat = new StandardMaterial('hw-floor-mat', scene)
+    hwMat.diffuseColor = hexToColor3(theme === 'dark' ? '#182234' : '#cbd5e1')
+    hwMat.specularColor = new Color3(0.05, 0.05, 0.05)
+    hwFloor.material = hwMat
+    hwFloor.position.x = hallwayCenterX
+    hwFloor.position.z = -corridorLen / 2
     hwFloor.position.y = -0.01
 
-    // 3. Low Architectural Walls
+    // 3. Dynamic Low Architectural Walls
     const wallH = 0.35
     const wallThick = 0.08
     const wallMat = new StandardMaterial('wall-mat', scene)
@@ -468,7 +516,11 @@ function BabylonCanvas() {
     wallMat.specularColor = new Color3(0.1, 0.1, 0.1)
 
     const createWall = (name: string, w: number, d: number, px: number, pz: number) => {
-      const wall = MeshBuilder.CreateBox(`arch-${name}`, { width: w, height: wallH, depth: d }, scene)
+      const wall = MeshBuilder.CreateBox(`arch-${name}`, {
+        width: Math.max(0.01, w),
+        height: wallH,
+        depth: Math.max(0.01, d),
+      }, scene)
       wall.position.x = px
       wall.position.z = pz
       wall.position.y = wallH / 2
@@ -478,10 +530,10 @@ function BabylonCanvas() {
     createWall('wall-n', roomW + wallThick * 2, wallThick, roomW / 2, roomD + wallThick / 2)
     createWall('wall-w', wallThick, roomD, -wallThick / 2, roomD / 2)
     createWall('wall-e', wallThick, roomD, roomW + wallThick / 2, roomD / 2)
-    createWall('wall-s-left', 1.6, wallThick, 0.8, -wallThick / 2)
-    createWall('wall-s-right', 1.6, wallThick, 4.2, -wallThick / 2)
-    createWall('hw-wall-w', wallThick, 1.4, 1.6 - wallThick / 2, -0.7)
-    createWall('hw-wall-e', wallThick, 1.4, 3.4 + wallThick / 2, -0.7)
+    createWall('wall-s-left', doorLeft, wallThick, doorLeft / 2, -wallThick / 2)
+    createWall('wall-s-right', roomW - doorRight, wallThick, doorRight + (roomW - doorRight) / 2, -wallThick / 2)
+    createWall('hw-wall-w', wallThick, corridorLen, doorLeft - wallThick / 2, -corridorLen / 2)
+    createWall('hw-wall-e', wallThick, corridorLen, doorRight + wallThick / 2, -corridorLen / 2)
 
     // 4. Ghost Sweep Volume & Pathways (The Crucial Visualization)
     const currentStep = plan?.steps[playbackStep]
@@ -583,8 +635,8 @@ function BabylonCanvas() {
       } else if (plan && planIdx > playbackStep) {
         // Items not yet entered: stage outside in hallway staging queue
         const queuePos = planIdx - playbackStep
-        posX = 2.5
-        posZ = -1.4 - queuePos * 0.75
+        posX = hallwayCenterX
+        posZ = -corridorLen - 0.3 - queuePos * 0.75
         posY = (f.assembled.h / 2) * SCALE
         rotY = 0
         meshAlpha = 0.45
@@ -648,7 +700,7 @@ function BabylonCanvas() {
         cz.material = czMat
       }
     }
-  }, [furniture, display, selectedId, theme, plan, playbackStep, playbackProgress])
+  }, [furniture, room, display, selectedId, theme, plan, playbackStep, playbackProgress])
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>

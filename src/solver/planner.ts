@@ -105,15 +105,27 @@ export function runPlanner(input: PlannerInput): SolverPlan {
     })
 
     const transport: TransportMode = item.canTilt ? 'whole' : 'whole'
+    const startRot = pathResult.path && pathResult.path.length > 0 ? pathResult.path[0].rot : (item.rotation ?? 0)
+    const goalRot = item.rotation ?? 0
+    const rotatedInTransit = pathResult.path && pathResult.path.some(n => n.rot !== startRot || n.rot !== goalRot)
+
+    let actionText = `Enter from hallway → place at (${Math.round(item.position!.x)}, ${Math.round(item.position!.y)})`
+    if (pathResult.found) {
+      if (startRot !== goalRot || rotatedInTransit) {
+        actionText = `Enter rotated ${startRot}° to clear ${Math.round((hallway?.xMax ?? 200) - (hallway?.xMin ?? 100))}cm passage → rotate to ${goalRot}° in room → dock at (${Math.round(item.position!.x)}, ${Math.round(item.position!.y)})`
+      } else {
+        actionText = `Enter directly (${startRot}°) → navigate clear path → place at (${Math.round(item.position!.x)}, ${Math.round(item.position!.y)})`
+      }
+    } else {
+      actionText = `Path obstructed or passage too tight for furniture dimensions (${item.assembled.w}×${item.assembled.d}cm)`
+    }
 
     const step: PlanStep = {
       index: i,
       furnitureId: item.id,
       furnitureName: item.name,
       transportMode: transport,
-      action: pathResult.found
-        ? `Enter from hallway → move to final position (${Math.round(item.position!.x)}, ${Math.round(item.position!.y)})`
-        : `Path obstructed by existing furniture`,
+      action: actionText,
       pathNodes: pathResult.path,
     }
 
