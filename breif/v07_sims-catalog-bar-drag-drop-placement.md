@@ -1,4 +1,4 @@
-﻿# v07 — Unity Explorer Catalog Panel + Drag & Drop Placement
+# v07 — Unity Explorer Catalog Panel + Drag & Drop Placement
 
 > **Status:** REVISED v2 — awaiting confirmation before code
 > **Date:** 2026-09-30
@@ -314,44 +314,49 @@ const CATALOG_TREE: CatalogFolder[] = [
 
 ---
 
-## 13. Layout in EditorView
+## 13. Layout in EditorView (Updated: Bottom Timeline Removed)
 
 ```
 EditorView (flex column):
-  ├── editor-shell (grid: 52% / 18% / 40%)   ← 3D + Inspector + optional CSV
-  ├── CatalogPanel (resizable height)          ← NEW
-  └── SimulationTimelineDock                   ← existing
+  ├── editor-shell (grid: 1fr / min(400px,18vw) [/ 40% CSV])
+  │     ├── 3D Viewport (BabylonJS canvas + results badge)
+  │     ├── N-Tab Inspector (Room, Display, Object, Sequence [with Timeline & Controls])
+  │     └── [Sequence CSV Editor] (with inline playback & scrub bar)
+  └── CatalogPanel (resizable height, default 200px)
+        ├── Breadcrumb Header + Search + Controls
+        └── Split: Folder Tree (min 300px, max 50%) | Asset Grid
 ```
 
----
-
-## 14. Files Estimasi (DONOT CODE YET)
-
-| File | Action | Keterangan |
-|------|--------|------------|
-| src/types/index.ts | Modify | Add `ObjectType`, `CatalogFolder`, extend `FurnitureItem.type` |
-| src/data/catalog-tree.ts | CREATE | CATALOG_TREE definition + folder structure |
-| src/data/presets.ts | Modify | Add `type` + `category` field to all preset items |
-| src/store/app-store.ts | Modify | Add catalog panel state + drag state |
-| src/components/CatalogPanel.tsx | CREATE | Main panel container (header + tree + grid) |
-| src/components/catalog/CatalogHeader.tsx | CREATE | Breadcrumb + search + sort + controls |
-| src/components/catalog/FolderTree.tsx | CREATE | Unity-style recursive folder tree |
-| src/components/catalog/AssetGrid.tsx | CREATE | Thumbnail grid with drag source |
-| src/components/catalog/DragOverlay.tsx | CREATE | Canvas drop target + ghost mesh controller |
-| src/components/EditorView.tsx | Modify | Add CatalogPanel between viewport and timeline |
-| src/styles/catalog-panel.css | CREATE | Explorer panel styles |
+*Note:* `SimulationTimelineDock` is removed from the bottom of the page to eliminate screen clutter and duplicated controls. The full scrub track and playback controls are relocated to the **Sequence Tab** in the Inspector and inline inside **Sequence CSV Editor**.
 
 ---
 
-## 15. Open Questions (Perlu Konfirmasi)
+## 14. Relocation of Simulation Timeline & Playback
 
-1. **Catalog panel height** — default 200px, resizable. Cukup?
-2. **Tree width default** — 300px. Oke?
-3. **Auto-fill CSV** — default ON. Oke?
-4. **Grid snap** — 10cm snap default ON atau OFF?
-5. **Obstacle items in tree** — tampil sebagai info/reference only (tidak bisa drag). Oke?
-6. **Thumbnail** — emoji placeholder dulu (v07), baru gambar/render di versi selanjutnya. Oke?
+### 14.1 Inside N-Tab Inspector (Sequence Tab)
+- **Current Step Header**: `Step X / Total` + Object name + action note
+- **Interactive Scrubber Bar**: Click/drag to scrub anywhere in sequence
+- **Playback Controls**: First (`⏮`), Previous (`◀`), Play/Pause (`▶`/`⏸`), Next (`▶`), Last (`⏭`)
+- **Step Pills**: Quick jump pills for each item in the solver sequence
+- **Ghost Sweep Toggle**: `👻 Ghost Trail: ON/OFF`
+
+### 14.2 Inside Sequence CSV Editor (Footer / Toolbar)
+- Compact playback strip aligned with CSV rows
+- Syncs seamlessly with current row focus
 
 ---
 
-*End of v07 Brief Revised v2 — konfirmasi open questions sebelum code.*
+## 15. Implementation Summary
+
+| Component | Status | Details |
+|-----------|--------|---------|
+| `CatalogPanel.tsx` | Complete | Resizable bottom panel, breadcrumb, folder tree, asset grid |
+| `FolderTree.tsx` | Complete | Unity-style recursive tree (min 300px, max 50%) |
+| `AssetGrid.tsx` | Complete | Draggable cards, emoji thumbnails, priority tags, `+ Add` |
+| `EditorView.tsx` | Updated | Drag-to-place 3D ghost box, removed bottom timeline |
+| `NTabInspector.tsx` | Updated | Integrated full timeline scrubber & playback controls into Sequence Tab |
+| `SequenceCSVEditor.tsx` | Updated | Added inline timeline playback controls |
+
+---
+
+*End of v07 Brief — Finalized with Timeline Relocation.*

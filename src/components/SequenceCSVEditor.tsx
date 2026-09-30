@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef, useCallback } from 'react'
+import React, { useState, useRef, useCallback } from 'react'
 import { useAppStore } from '@/store/app-store'
 import type { SequenceStep, EasingType } from '@/types'
 
@@ -110,11 +110,28 @@ export function SequenceCSVEditor() {
     pendingChanges, saveSequenceAnimation,
     exportSequenceCSV, copySequencePrompt,
     playbackPlaying, setPlaybackPlaying,
-    setPlaybackStep, setPlaybackProgress,
+    playbackStep, setPlaybackStep,
+    playbackProgress, setPlaybackProgress,
     plan,
   } = useAppStore()
 
   const [selectedCell, setSelectedCell] = useState<{ row: number; col: number } | null>(null)
+
+  const steps = plan?.steps ?? []
+  const total = steps.length
+  const current = steps[playbackStep]
+  const overallRatio = total > 0 ? (playbackStep + playbackProgress) / total : 0
+
+  const handleTrackClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (total === 0) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const ratio = Math.max(0, Math.min(0.999, (e.clientX - rect.left) / rect.width))
+    const totalUnits = ratio * total
+    const newStep = Math.floor(totalUnits)
+    const newProgress = totalUnits - newStep
+    setPlaybackStep(newStep)
+    setPlaybackProgress(newProgress)
+  }
 
   const getTabNext = (rowIdx: number, colIdx: number) => () => {
     if (colIdx < COLS.length - 1) setSelectedCell({ row: rowIdx, col: colIdx + 1 })
@@ -137,6 +154,10 @@ export function SequenceCSVEditor() {
 
   const handlePlayToggle = () => {
     if (!plan) return
+    if (playbackStep >= total - 1 && playbackProgress >= 0.99) {
+      setPlaybackStep(0)
+      setPlaybackProgress(0)
+    }
     setPlaybackPlaying(!playbackPlaying)
   }
   const handleStop = () => {
@@ -153,8 +174,8 @@ export function SequenceCSVEditor() {
           <button className="btn btn-sm" onClick={handlePlayToggle} disabled={!plan} title={plan ? '' : 'Run solver first'}>
             {playbackPlaying ? '⏸' : '▶'} {playbackPlaying ? 'Pause' : 'Play'}
           </button>
-          <button className="btn btn-sm" onClick={handleStop}>⏹ Stop</button>
-          <button className="btn btn-sm" onClick={() => { setPlaybackStep(0); setPlaybackProgress(0); setPlaybackPlaying(false) }}>⏮ Reset</button>
+          <button className="btn btn-sm" onClick={handleStop}>⏹</button>
+          <button className="btn btn-sm" onClick={() => { setPlaybackStep(0); setPlaybackProgress(0); setPlaybackPlaying(false) }}>⏮</button>
           <span className="csv-toolbar-sep" />
           <span className="text-muted text-xs">Steps: {sequenceRows.length}</span>
           <span className="text-muted text-xs">
@@ -167,6 +188,26 @@ export function SequenceCSVEditor() {
           <button className="btn btn-sm btn-icon" onClick={() => setCSVEditorOpen(false)} title="Close CSV Editor">✕</button>
         </div>
       </div>
+
+      {/* Inline Timeline Scrubber Track */}
+      {total > 0 && (
+        <div style={{ padding: '4px 10px', background: 'var(--surface2)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>
+            Step {playbackStep + 1}/{total}: {current?.furnitureName}
+          </span>
+          <div
+            className="timeline-track"
+            onClick={handleTrackClick}
+            style={{ flex: 1, height: 5, cursor: 'pointer', margin: 0 }}
+          >
+            <div className="timeline-fill" style={{ width: `${overallRatio * 100}%` }} />
+            <div className="timeline-thumb" style={{ left: `${overallRatio * 100}%`, width: 10, height: 10 }} />
+          </div>
+          <span style={{ fontSize: 10, color: 'var(--text-2)', fontFamily: 'monospace' }}>
+            {(playbackProgress * 100).toFixed(0)}%
+          </span>
+        </div>
+      )}
 
       {/* Live Sync toolbar */}
       <div className="csv-sync-bar">

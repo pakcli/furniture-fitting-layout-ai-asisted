@@ -1,4 +1,4 @@
-﻿import React from 'react'
+import React from 'react'
 import { useAppStore } from '@/store/app-store'
 import { DisplaySettings as DisplaySettingsPanel } from '@/components/DisplaySettings'
 import { ROOM_PRESETS } from '@/data/presets'
@@ -113,38 +113,186 @@ function ObjectTab() {
 function SequenceTab() {
   const {
     sequenceRows, setCSVEditorOpen,
+    plan, furniture,
+    playbackStep, setPlaybackStep,
     playbackPlaying, setPlaybackPlaying,
-    setPlaybackStep, setPlaybackProgress,
+    playbackProgress, setPlaybackProgress,
+    display, setDisplay,
     exportSequenceCSV, copySequencePrompt,
   } = useAppStore()
-  const totalSteps = sequenceRows.length
+
+  const steps = plan?.steps ?? []
+  const total = steps.length
+  const current = steps[playbackStep]
+  const totalRows = sequenceRows.length
   const totalDur = sequenceRows.reduce((a, r) => a + r.duration_s, 0)
+
+  // Overall scrub ratio
+  const overallRatio = total > 0
+    ? (playbackStep + playbackProgress) / total
+    : 0
+
+  const handleTrackClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (total === 0) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const ratio = Math.max(0, Math.min(0.999, (e.clientX - rect.left) / rect.width))
+    const totalUnits = ratio * total
+    const newStep = Math.floor(totalUnits)
+    const newProgress = totalUnits - newStep
+    setPlaybackStep(newStep)
+    setPlaybackProgress(newProgress)
+  }
+
   return (
     <div className="ntab-content">
+      {/* Sequence & Plan Summary */}
       <div className="panel-section">
         <div className="section-title">Sequence Summary</div>
         <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}>
-          <span className="text-muted text-xs">Steps</span>
-          <span style={{ fontWeight:600, fontSize:13 }}>{totalSteps}</span>
+          <span className="text-muted text-xs">Solver Steps</span>
+          <span style={{ fontWeight:600, fontSize:13 }}>{total > 0 ? `${playbackStep + 1} / ${total}` : 'No plan'}</span>
+        </div>
+        <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}>
+          <span className="text-muted text-xs">CSV Rows</span>
+          <span style={{ fontWeight:600, fontSize:13 }}>{totalRows}</span>
         </div>
         <div style={{ display:'flex', justifyContent:'space-between', marginBottom:8 }}>
-          <span className="text-muted text-xs">Duration</span>
+          <span className="text-muted text-xs">Total Duration</span>
           <span style={{ fontWeight:600, fontSize:13 }}>{totalDur.toFixed(1)}s</span>
         </div>
         <button className="btn btn-primary btn-sm w-full" onClick={() => setCSVEditorOpen(true)}>
           📋 Open CSV Editor →
         </button>
       </div>
+
+      {/* Interactive Playback & Scrubber */}
       <div className="panel-section">
-        <div className="section-title">Playback</div>
-        <div className="flex gap-1">
-          <button className="btn btn-sm flex-1" onClick={() => { setPlaybackStep(0); setPlaybackProgress(0); setPlaybackPlaying(false) }}>⏮</button>
-          <button className={`btn btn-sm flex-1${playbackPlaying?' btn-primary':''}`} onClick={() => setPlaybackPlaying(!playbackPlaying)}>
-            {playbackPlaying ? '⏸' : '▶'}
-          </button>
-          <button className="btn btn-sm flex-1" onClick={() => setPlaybackPlaying(false)}>⏹</button>
+        <div className="section-title">Timeline & Playback</div>
+
+        {/* Current step title and action */}
+        <div style={{ marginBottom: 6, fontSize: 11 }}>
+          <div style={{ fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {current ? current.furnitureName : (total > 0 ? 'Ready' : 'Run Solver to animate')}
+          </div>
+          {current && (
+            <div style={{ color: 'var(--text-2)', fontSize: 10, marginTop: 2 }}>
+              {current.action}
+            </div>
+          )}
         </div>
+
+        {/* Scrub Track */}
+        <div
+          className="timeline-track"
+          onClick={handleTrackClick}
+          style={{ height: 6, margin: '8px 0', cursor: total > 0 ? 'pointer' : 'default' }}
+        >
+          <div className="timeline-fill" style={{ width: `${overallRatio * 100}%` }} />
+          <div className="timeline-thumb" style={{ left: `${overallRatio * 100}%`, width: 12, height: 12 }} />
+        </div>
+
+        {/* Control Buttons */}
+        <div className="flex gap-1" style={{ marginTop: 8 }}>
+          <button
+            className="btn btn-sm"
+            onClick={() => { setPlaybackStep(0); setPlaybackProgress(0); setPlaybackPlaying(false) }}
+            title="First Step"
+            disabled={total === 0}
+          >
+            ⏮
+          </button>
+          <button
+            className="btn btn-sm"
+            onClick={() => {
+              if (playbackStep > 0) {
+                setPlaybackStep(playbackStep - 1)
+                setPlaybackProgress(1.0)
+              }
+            }}
+            title="Previous Step"
+            disabled={total === 0}
+          >
+            ◀
+          </button>
+          <button
+            className={`btn btn-sm flex-1${playbackPlaying ? ' btn-primary' : ''}`}
+            onClick={() => {
+              if (playbackStep >= total - 1 && playbackProgress >= 0.99) {
+                setPlaybackStep(0)
+                setPlaybackProgress(0)
+              }
+              setPlaybackPlaying(!playbackPlaying)
+            }}
+            disabled={total === 0}
+            style={{ fontWeight: 600 }}
+          >
+            {playbackPlaying ? '⏸ Pause' : '▶ Play'}
+          </button>
+          <button
+            className="btn btn-sm"
+            onClick={() => {
+              if (playbackStep < total - 1) {
+                setPlaybackStep(playbackStep + 1)
+                setPlaybackProgress(1.0)
+              }
+            }}
+            title="Next Step"
+            disabled={total === 0}
+          >
+            ▶
+          </button>
+          <button
+            className="btn btn-sm"
+            onClick={() => { setPlaybackStep(Math.max(0, total - 1)); setPlaybackProgress(1.0); setPlaybackPlaying(false) }}
+            title="Last Step"
+            disabled={total === 0}
+          >
+            ⏭
+          </button>
+        </div>
+
+        {/* Ghost Trail Toggle */}
+        <div style={{ marginTop: 8 }}>
+          <button
+            className={`btn btn-sm w-full${display.showGhostTrail ? ' btn-primary' : ''}`}
+            onClick={() => setDisplay({ showGhostTrail: !display.showGhostTrail })}
+            style={{ fontSize: 11 }}
+          >
+            👻 Ghost Trail: {display.showGhostTrail ? 'ON' : 'OFF'}
+          </button>
+        </div>
+
+        {/* Step Pills Quick Jump */}
+        {total > 0 && (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 10, color: 'var(--text-2)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Jump to Step:
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 120, overflowY: 'auto' }}>
+              {steps.map((s, i) => (
+                <button
+                  key={s.furnitureId}
+                  className={`btn btn-sm${playbackStep === i ? ' btn-primary' : ''}`}
+                  onClick={() => { setPlaybackStep(i); setPlaybackProgress(1.0) }}
+                  style={{
+                    justifyContent: 'flex-start',
+                    fontSize: 10.5,
+                    padding: '3px 6px',
+                    textAlign: 'left',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  <span style={{ opacity: 0.7, marginRight: 4 }}>{i + 1}.</span> {s.furnitureName}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Export */}
       <div className="panel-section">
         <div className="section-title">Export</div>
         <button className="btn btn-sm w-full" onClick={exportSequenceCSV} title="Save CSV file + copy to clipboard">⬇ Export CSV</button>
