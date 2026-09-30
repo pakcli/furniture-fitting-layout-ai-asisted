@@ -4,6 +4,7 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import type {
   FurnitureItem, Room, SolverPlan, PlanStep,
   Theme, CatalogMode, CatalogLayout, DisplaySettings,
+  SequenceStep, InspectorTab,
 } from '@/types'
 import {
   MASTER_BEDROOM_ROOM,
@@ -112,6 +113,26 @@ interface AppStore {
   // Theme
   theme: Theme
   setTheme: (t: Theme) => void
+
+  // N-Tab Inspector
+  inspectorTab: InspectorTab
+  setInspectorTab: (t: InspectorTab) => void
+
+  // Sequence CSV Editor
+  sequenceRows: SequenceStep[]
+  setSequenceRows: (rows: SequenceStep[]) => void
+  updateSequenceRow: (stepId: number, patch: Partial<SequenceStep>) => void
+  insertSequenceRow: (afterStepId?: number) => void
+  deleteSequenceRow: (stepId: number) => void
+  moveSequenceRow: (stepId: number, direction: 'up' | 'down') => void
+  isCSVEditorOpen: boolean
+  setCSVEditorOpen: (v: boolean) => void
+  liveSyncEnabled: boolean
+  setLiveSyncEnabled: (v: boolean) => void
+  pendingChanges: number
+  saveSequenceAnimation: () => void
+  exportSequenceCSV: () => void
+  copySequencePrompt: () => void
 }
 
 // ─── Persistent Store (localStorage) ──────────────────────────────────────────
@@ -213,6 +234,117 @@ export const useAppStore = create<AppStore>()(
 
         theme: 'dark',
         setTheme: (t) => set({ theme: t }),
+
+        // N-Tab Inspector
+        inspectorTab: 'room',
+        setInspectorTab: (t) => set({ inspectorTab: t }),
+
+        // Sequence CSV Editor
+        sequenceRows: [],
+        setSequenceRows: (rows) => set({ sequenceRows: rows }),
+        updateSequenceRow: (stepId, patch) =>
+          set((s) => ({
+            sequenceRows: s.sequenceRows.map((r) =>
+              r.step_id === stepId ? { ...r, ...patch } : r
+            ),
+            pendingChanges: s.liveSyncEnabled ? s.pendingChanges : s.pendingChanges + 1,
+          })),
+        insertSequenceRow: (afterStepId) =>
+          set((s) => {
+            const rows = s.sequenceRows
+            const newId = rows.length > 0 ? Math.max(...rows.map(r => r.step_id)) + 1 : 1
+            const newRow: SequenceStep = {
+              step_id: newId,
+              object_id: '',
+              object_name: '',
+              start_pos_x: 0, start_pos_y: 0, start_rot: 0,
+              end_pos_x: 0, end_pos_y: 0, end_rot: 0,
+              duration_s: 1.0,
+              easing: 'ease-in-out',
+              notes: '',
+            }
+            if (afterStepId === undefined) {
+              return { sequenceRows: [...rows, newRow] }
+            }
+            const idx = rows.findIndex(r => r.step_id === afterStepId)
+            const next = [...rows]
+            next.splice(idx + 1, 0, newRow)
+            return { sequenceRows: next }
+          }),
+        deleteSequenceRow: (stepId) =>
+          set((s) => ({ sequenceRows: s.sequenceRows.filter(r => r.step_id !== stepId) })),
+        moveSequenceRow: (stepId, direction) =>
+          set((s) => {
+            const rows = [...s.sequenceRows]
+            const idx = rows.findIndex(r => r.step_id === stepId)
+            if (idx === -1) return {}
+            const swapIdx = direction === 'up' ? idx - 1 : idx + 1
+            if (swapIdx < 0 || swapIdx >= rows.length) return {}
+            ;[rows[idx], rows[swapIdx]] = [rows[swapIdx], rows[idx]]
+            return { sequenceRows: rows }
+          }),
+        isCSVEditorOpen: false,
+        setCSVEditorOpen: (v) => set({ isCSVEditorOpen: v }),
+        liveSyncEnabled: false,
+        setLiveSyncEnabled: (v) => set({ liveSyncEnabled: v, pendingChanges: 0 }),
+        pendingChanges: 0,
+        saveSequenceAnimation: () => set({ pendingChanges: 0 }),
+        exportSequenceCSV: () => {
+          const { sequenceRows, room } = get()
+          const header = 'step_id,object_id,object_name,start_pos_x,start_pos_y,start_rot,end_pos_x,end_pos_y,end_rot,duration_s,easing,notes'
+          const rows = sequenceRows.map(r =>
+            [r.step_id, r.object_id, r.object_name, r.start_pos_x, r.start_pos_y, r.start_rot,
+             r.end_pos_x, r.end_pos_y, r.end_rot, r.duration_s, r.easing,
+             `"${r.notes.replace(/"/g, '""')}"`].join(',')
+          )
+          const csv = [header, ...rows].join('\n')
+          // Copy to clipboard
+          navigator.clipboard?.writeText(csv).catch(() => {})
+          // Download file
+          const ts = new Date().toISOString().slice(0, 16).replace(/[:-]/g, '').replace('T', '_')
+          const filename = `sequence_${room.name.replace(/\s+/g, '_')}_${ts}.csv`
+          const blob = new Blob([csv], { type: 'text/csv' })
+          const url = URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = url; a.download = filename; a.click()
+          URL.revokeObjectURL(url)
+        },
+        copySequencePrompt: () => {
+          const { sequenceRows, room, furniture } = get()
+          const header = 'step_id,object_id,object_name,start_pos_x,start_pos_y,start_rot,end_pos_x,end_pos_y,end_rot,duration_s,easing'
+          const rowsNoNotes = sequenceRows.map(r =>
+            [r.step_id, r.object_id, r.object_name, r.start_pos_x, r.start_pos_y, r.start_rot,
+             r.end_pos_x, r.end_pos_y, r.end_rot, r.duration_s, r.easing].join(',')
+          )
+          const csvFull = [
+            'step_id,object_id,object_name,start_pos_x,start_pos_y,start_rot,end_pos_x,end_pos_y,end_rot,duration_s,easing,notes',
+            ...sequenceRows.map(r =>
+              [r.step_id, r.object_id, r.object_name, r.start_pos_x, r.start_pos_y, r.start_rot,
+               r.end_pos_x, r.end_pos_y, r.end_rot, r.duration_s, r.easing,
+               `"${r.notes.replace(/"/g, '""')}"`].join(',')
+            ),
+          ].join('\n')
+          const walls = room.walls
+          const W = walls.length > 1 ? Math.abs(walls[1].x2 - walls[0].x1) : 0
+          const D = walls.length > 2 ? Math.abs(walls[2].y2 - walls[0].y1) : 0
+          const totalDur = sequenceRows.reduce((a, r) => a + r.duration_s, 0)
+          const prompt = [
+            '[FORMAT 1 — AI PROMPT]',
+            'You are a furniture layout animation assistant.',
+            'Animate the following objects in sequence for a room layout fitting:',
+            '',
+            `${header}`,
+            ...rowsNoNotes,
+            '',
+            `Room: ${(W/100).toFixed(1)}m x ${(D/100).toFixed(1)}m x ${(room.ceilingHeightCm/100).toFixed(1)}m | Objects: ${furniture.length} | Total Duration: ${totalDur.toFixed(1)}s`,
+            '',
+            '---',
+            '',
+            '[FORMAT 2 — RAW CSV]',
+            csvFull,
+          ].join('\n')
+          navigator.clipboard?.writeText(prompt).catch(() => {})
+        },
       }),
       { limit: 50 }
     ),

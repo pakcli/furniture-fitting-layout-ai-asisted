@@ -5,8 +5,9 @@ import {
   PointerEventTypes, type Mesh,
 } from '@babylonjs/core'
 import { useAppStore } from '@/store/app-store'
-import { DisplaySettings as DisplaySettingsPanel } from '@/components/DisplaySettings'
 import { ResultsPanel } from '@/components/ResultsPanel'
+import { NTabInspector } from '@/components/NTabInspector'
+import { SequenceCSVEditor } from '@/components/SequenceCSVEditor'
 import { ROOM_PRESETS } from '@/data/presets'
 import { furnitureToOBB, satTest } from '@/solver/obb-sat'
 
@@ -172,138 +173,6 @@ function SimulationTimelineDock() {
   )
 }
 
-// ─── Left panel (Room & Selected Furniture) ───────────────────────────────────
-
-function LeftPanel() {
-  const {
-    furniture, selectedId, updateFurniture, removeFurniture,
-    room, setRoom, selectRoomPreset,
-  } = useAppStore()
-  const selected = furniture.find(f => f.id === selectedId)
-
-  return (
-    <div className="editor-left">
-      {/* Room Preset Selector */}
-      <div className="panel-section">
-        <div className="section-title">Room Layout Preset</div>
-        <select
-          value={room.id}
-          onChange={e => selectRoomPreset(e.target.value)}
-          style={{
-            width: '100%',
-            padding: '5px 8px',
-            fontSize: 12,
-            fontWeight: 600,
-            borderRadius: 5,
-            background: 'var(--surface2)',
-            color: 'var(--text)',
-            border: '1px solid var(--border)',
-          }}
-        >
-          {ROOM_PRESETS.map(p => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-        <div className="text-muted text-xs mt-1" style={{ lineHeight: 1.35 }}>
-          {room.id === 'room-compact-studio'
-            ? '⚡ 1.0m narrow door: Studio Bed must rotate 90° to fit through hallway!'
-            : '🚪 1.8m wide entrance hallway into 500×380cm bedroom.'}
-        </div>
-      </div>
-
-      <div className="panel-section">
-        <div className="section-title">Room Specs</div>
-        <div className="field-row">
-          <label>Ceiling H</label>
-          <input
-            type="number"
-            value={room.ceilingHeightCm}
-            onChange={e => setRoom({ ...room, ceilingHeightCm: +e.target.value })}
-          />
-          <span className="text-muted text-sm">cm</span>
-        </div>
-        <div className="field-row">
-          <label>Walkway Min</label>
-          <input
-            type="number"
-            value={room.walkwayMinCm}
-            onChange={e => setRoom({ ...room, walkwayMinCm: +e.target.value })}
-          />
-          <span className="text-muted text-sm">cm</span>
-        </div>
-      </div>
-
-      {selected ? (
-        <div className="panel-section">
-          <div className="section-title" style={{ color: 'var(--blue)', fontWeight: 600 }}>
-            Selected: {selected.name}
-          </div>
-          <div className="field-row">
-            <label>X pos</label>
-            <input
-              type="number"
-              value={Math.round(selected.position?.x ?? 0)}
-              onChange={e => updateFurniture(selected.id, {
-                position: { x: +e.target.value, y: selected.position?.y ?? 0 },
-              })}
-            />
-            <span className="text-muted text-sm">cm</span>
-          </div>
-          <div className="field-row">
-            <label>Y pos</label>
-            <input
-              type="number"
-              value={Math.round(selected.position?.y ?? 0)}
-              onChange={e => updateFurniture(selected.id, {
-                position: { x: selected.position?.x ?? 0, y: +e.target.value },
-              })}
-            />
-            <span className="text-muted text-sm">cm</span>
-          </div>
-          <div className="field-row">
-            <label>Rotation</label>
-            <input
-              type="number"
-              value={selected.rotation ?? 0}
-              onChange={e => updateFurniture(selected.id, { rotation: +e.target.value })}
-            />
-            <span className="text-muted text-sm">deg</span>
-          </div>
-          <div className="flex gap-1 mt-1">
-            <button
-              className="btn btn-sm"
-              onClick={() => updateFurniture(selected.id, { rotation: ((selected.rotation ?? 0) + 90) % 360 })}
-            >
-              +90°
-            </button>
-            <button
-              className="btn btn-sm"
-              onClick={() => updateFurniture(selected.id, { rotation: ((selected.rotation ?? 0) - 90 + 360) % 360 })}
-            >
-              -90°
-            </button>
-          </div>
-          <button
-            className="btn btn-danger btn-sm mt-2 w-full"
-            onClick={() => removeFurniture(selected.id)}
-          >
-            Remove Item
-          </button>
-        </div>
-      ) : (
-        <div className="panel-section" style={{ color: 'var(--text-2)', fontSize: 12 }}>
-          💡 Click any furniture mesh to adjust its position &amp; orientation.
-        </div>
-      )}
-
-      <div className="panel-section" style={{ flex: 1, overflowY: 'auto' }}>
-        <DisplaySettingsPanel />
-      </div>
-    </div>
-  )
-}
 
 // ─── Babylon.js Canvas (Combined 3D & 2D Top View + Ghosts) ───────────────────
 
@@ -459,11 +328,23 @@ function BabylonCanvas() {
     })
 
     engine.runRenderLoop(() => scene.render())
+
+    // ResizeObserver on canvas itself — catches layout-driven resizes
+    // (grid column changes, CSV editor open/close) not just window resize
+    const ro = new ResizeObserver(() => {
+      engine.resize()
+    })
+    if (canvasRef.current) ro.observe(canvasRef.current)
+
     const handleResize = () => engine.resize()
     window.addEventListener('resize', handleResize)
 
+    // Force correct dimensions on first mount (after CSS grid has settled)
+    requestAnimationFrame(() => engine.resize())
+
     return () => {
       window.removeEventListener('resize', handleResize)
+      ro.disconnect()
     }
   }, [])
 
@@ -787,15 +668,35 @@ function BabylonCanvas() {
 // ─── Main Unified EditorView (3D Studio & Simulation Combined) ────────────────
 
 export function EditorView() {
+  const { isCSVEditorOpen } = useAppStore()
+
   return (
-    <div className="flex flex-col flex-1 overflow-hidden">
-      <div className="editor-shell">
-        <LeftPanel />
-        <div className="editor-canvas">
+    <div style={{ display:'flex', flexDirection:'column', flex:1, overflow:'hidden' }}>
+      <div
+        className="editor-shell"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: isCSVEditorOpen
+            ? '1fr min(400px,18vw) 40%'
+            : '1fr min(400px,18vw)',
+          transition: 'grid-template-columns 200ms ease',
+          flex: 1,
+          overflow: 'hidden',
+        }}
+      >
+        {/* 3D Viewport — always 52% (flex fill) */}
+        <div className="editor-canvas" style={{ position:'relative', overflow:'hidden' }}>
           <BabylonCanvas />
+          <ResultsPanel />
         </div>
-        <ResultsPanel />
+
+        {/* N-Tab Inspector — min(400px, 18vw) */}
+        <NTabInspector />
+
+        {/* Sequence CSV Editor — 40% (only when open) */}
+        {isCSVEditorOpen && <SequenceCSVEditor />}
       </div>
+
       <SimulationTimelineDock />
     </div>
   )

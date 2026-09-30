@@ -121,6 +121,29 @@ export interface SolverPlan {
   computedAt: number // timestamp
 }
 
+// ─── Sequence / Animation ─────────────────────────────────────────────────────
+
+export type EasingType = 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out'
+
+export interface SequenceStep {
+  step_id: number
+  object_id: string
+  object_name: string
+  start_pos_x: number
+  start_pos_y: number
+  start_rot: number
+  end_pos_x: number
+  end_pos_y: number
+  end_rot: number
+  duration_s: number
+  easing: EasingType
+  notes: string
+}
+
+export type PlaybackState = 'idle' | 'playing' | 'paused'
+
+export type InspectorTab = 'room' | 'display' | 'object' | 'sequence'
+
 // ─── Display Settings ─────────────────────────────────────────────────────────
 
 export interface DisplaySettings {
