@@ -746,3 +746,105 @@ input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
   100% { box-shadow: none; }
 }
 .flash-green { animation: flash-green 0.5s ease; }
+
+/* ─── Canvas View Toolbar (2D/3D + Ghost) ────────────────────────── */
+
+.canvas-view-toolbar {
+  position: absolute;
+  top: 12px;
+  left: 14px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(8px);
+  padding: 4px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  z-index: 10;
+}
+
+.view-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 11px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.view-btn:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.view-btn.active {
+  background: var(--accent);
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+}
+
+.view-btn.ghost-active {
+  border-color: #06b6d4;
+  color: #06b6d4;
+  background: rgba(6, 182, 212, 0.15);
+}
+
+/* ─── Simulation Dock (Combined Studio) ─────────────────────────── */
+
+.sim-dock {
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 8px 16px 10px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sim-dock-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sim-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  letter-spacing: 0.2px;
+}
+
+.sim-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.sim-dock-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.step-pill-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  max-width: 70%;
+  padding-bottom: 2px;
+}

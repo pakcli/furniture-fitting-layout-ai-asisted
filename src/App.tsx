@@ -10,10 +10,9 @@ import '@/index.css'
 type Tab = 'catalog' | 'editor' | 'hierarchy' | 'simulation'
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'catalog',    label: 'Catalog' },
-  { id: 'editor',     label: '3D Editor' },
-  { id: 'hierarchy',  label: 'Hierarchy' },
-  { id: 'simulation', label: 'Simulation' },
+  { id: 'editor',     label: '📐 3D Studio & Simulation' },
+  { id: 'catalog',    label: '📦 Catalog' },
+  { id: 'hierarchy',  label: '🌳 Hierarchy' },
 ]
 
 function StatusBar() {
@@ -79,9 +78,8 @@ export default function App() {
       {/* Tab content */}
       <div className="tab-content">
         {activeTab === 'catalog'    && <CatalogView />}
-        {activeTab === 'editor'     && <EditorView />}
+        {(activeTab === 'editor' || activeTab === 'simulation') && <EditorView />}
         {activeTab === 'hierarchy'  && <HierarchyView />}
-        {activeTab === 'simulation' && <SimulationView />}
       </div>
 
       {/* Status bar */}

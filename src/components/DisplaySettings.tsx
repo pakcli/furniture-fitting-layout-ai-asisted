@@ -22,6 +22,11 @@ export function DisplaySettings() {
         <input type="color" value={display.clearanceZoneColor} onChange={e => upd({ clearanceZoneColor: e.target.value })} />
       </div>
 
+      <div className="field-row">
+        <label>👻 Ghost trail</label>
+        <input type="checkbox" checked={display.showGhostTrail} onChange={e => upd({ showGhostTrail: e.target.checked })} />
+      </div>
+
       <div className="section-title">Material</div>
       {(['matte', 'texture', 'fallback'] as const).map(mode => (
         <div className="field-row" key={mode}>

@@ -137,4 +137,6 @@ export interface DisplaySettings {
   collisionColor: string
   fragileCollisionColor: string
   showFloorShadow: boolean
+  showGhostTrail: boolean
+  viewMode: '3d' | '2d'
 }

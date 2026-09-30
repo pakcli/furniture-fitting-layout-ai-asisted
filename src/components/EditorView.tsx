@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import {
   Engine, Scene, ArcRotateCamera, HemisphericLight, DirectionalLight,
   Vector3, Color4, Color3, MeshBuilder, StandardMaterial,
@@ -9,29 +9,169 @@ import { DisplaySettings as DisplaySettingsPanel } from '@/components/DisplaySet
 import { ResultsPanel } from '@/components/ResultsPanel'
 import { furnitureToOBB, satTest } from '@/solver/obb-sat'
 
-// ─── Step slider ──────────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function StepSlider() {
-  const { plan, playbackStep, setPlaybackStep } = useAppStore()
-  if (!plan || plan.steps.length === 0) return null
+function hexToColor3(hex: string): Color3 {
+  const r = parseInt(hex.slice(1, 3), 16) / 255
+  const g = parseInt(hex.slice(3, 5), 16) / 255
+  const b = parseInt(hex.slice(5, 7), 16) / 255
+  return new Color3(r, g, b)
+}
+
+function canvasBgToColor4(hex: string): Color4 {
+  const c = hexToColor3(hex)
+  return new Color4(c.r, c.g, c.b, 1)
+}
+
+let engineRef: Engine | null = null
+let sceneRef: Scene | null = null
+let cameraRef: ArcRotateCamera | null = null
+
+// ─── Simulation Timeline Dock (Combined Editor + Simulation) ──────────────────
+
+function SimulationTimelineDock() {
+  const {
+    plan, furniture,
+    playbackStep, setPlaybackStep,
+    playbackPlaying, setPlaybackPlaying,
+    playbackProgress, setPlaybackProgress,
+    display, setDisplay,
+  } = useAppStore()
+
+  const steps = plan?.steps ?? []
+  const total = steps.length
+  const current = steps[playbackStep]
+  const currentFurniture = furniture.find(f => f.id === current?.furnitureId)
+
+  // Overall scrub ratio: based on step and sub-progress
+  const overallRatio = total > 0
+    ? (playbackStep + playbackProgress) / total
+    : 0
+
+  const handleTrackClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (total === 0) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const ratio = Math.max(0, Math.min(0.999, (e.clientX - rect.left) / rect.width))
+    const totalUnits = ratio * total
+    const newStep = Math.floor(totalUnits)
+    const newProgress = totalUnits - newStep
+    setPlaybackStep(newStep)
+    setPlaybackProgress(newProgress)
+  }
 
   return (
-    <div className="step-slider-bar">
-      <span className="text-muted text-sm" style={{ fontWeight: 600 }}>Entry Order:</span>
-      {plan.steps.map((s, i) => (
-        <button
-          key={s.furnitureId}
-          className={`step-pill${playbackStep === i ? ' active' : ''}${s.issue?.type === 'stall' ? ' stall' : ''}`}
-          onClick={() => setPlaybackStep(i)}
-        >
-          {i + 1}. {s.furnitureName}
-        </button>
-      ))}
+    <div className="sim-dock">
+      {/* Top info row */}
+      <div className="sim-dock-header">
+        <div className="flex items-center gap-2">
+          <span className="sim-badge">
+            {total > 0 ? `Step ${playbackStep + 1} / ${total}` : 'No plan'}
+          </span>
+          <span className="sim-title">
+            {current ? current.furnitureName : 'Run Entry Solver to enable simulation'}
+          </span>
+          {current && (
+            <span className="text-muted text-sm">— {current.action}</span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          {/* Ghost trail toggle */}
+          <button
+            className={`btn btn-sm${display.showGhostTrail ? ' btn-primary' : ''}`}
+            onClick={() => setDisplay({ showGhostTrail: !display.showGhostTrail })}
+            title="Toggle Ghost Sweep Volume visualization along the entry path"
+            style={{ fontSize: 11, padding: '3px 8px' }}
+          >
+            👻 Ghost Trail: {display.showGhostTrail ? 'ON' : 'OFF'}
+          </button>
+        </div>
+      </div>
+
+      {/* Scrubbable progress bar */}
+      <div className="timeline-track" onClick={handleTrackClick} style={{ height: 6, margin: '6px 0' }}>
+        <div className="timeline-fill" style={{ width: `${overallRatio * 100}%` }} />
+        <div className="timeline-thumb" style={{ left: `${overallRatio * 100}%`, width: 14, height: 14 }} />
+      </div>
+
+      {/* Playback Controls & Step Pills */}
+      <div className="sim-dock-footer">
+        <div className="flex items-center gap-1">
+          <button
+            className="btn btn-sm"
+            onClick={() => { setPlaybackStep(0); setPlaybackProgress(0); setPlaybackPlaying(false) }}
+            title="First Step"
+          >
+            ⏮
+          </button>
+          <button
+            className="btn btn-sm"
+            onClick={() => {
+              if (playbackStep > 0) {
+                setPlaybackStep(playbackStep - 1)
+                setPlaybackProgress(1.0)
+              }
+            }}
+            title="Previous Step"
+          >
+            ◀
+          </button>
+          <button
+            className={`btn btn-sm${playbackPlaying ? ' btn-primary' : ''}`}
+            onClick={() => {
+              if (playbackStep >= total - 1 && playbackProgress >= 0.99) {
+                setPlaybackStep(0)
+                setPlaybackProgress(0)
+              }
+              setPlaybackPlaying(!playbackPlaying)
+            }}
+            style={{ minWidth: 64, fontWeight: 600 }}
+          >
+            {playbackPlaying ? '⏸ Pause' : '▶ Play'}
+          </button>
+          <button
+            className="btn btn-sm"
+            onClick={() => {
+              if (playbackStep < total - 1) {
+                setPlaybackStep(playbackStep + 1)
+                setPlaybackProgress(1.0)
+              }
+            }}
+            title="Next Step"
+          >
+            ▶
+          </button>
+          <button
+            className="btn btn-sm"
+            onClick={() => { setPlaybackStep(Math.max(0, total - 1)); setPlaybackProgress(1.0); setPlaybackPlaying(false) }}
+            title="Last Step"
+          >
+            ⏭
+          </button>
+        </div>
+
+        {/* Step Pills */}
+        <div className="step-pill-strip">
+          {steps.map((s, i) => (
+            <button
+              key={s.furnitureId}
+              className={`step-pill${playbackStep === i ? ' active' : ''}${s.issue?.type === 'stall' ? ' stall' : ''}`}
+              onClick={() => {
+                setPlaybackStep(i)
+                setPlaybackProgress(1.0)
+              }}
+              title={s.action}
+            >
+              {i + 1}. {s.furnitureName}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }
 
-// ─── Left panel ───────────────────────────────────────────────────────────────
+// ─── Left panel (Room & Selected Furniture) ───────────────────────────────────
 
 function LeftPanel() {
   const { furniture, selectedId, updateFurniture, removeFurniture, room, setRoom } = useAppStore()
@@ -40,7 +180,7 @@ function LeftPanel() {
   return (
     <div className="editor-left">
       <div className="panel-section">
-        <div className="section-title">Room &amp; Hallway Dimensions</div>
+        <div className="section-title">Master Bedroom Suite</div>
         <div className="field-row">
           <label>Ceiling H</label>
           <input
@@ -102,13 +242,13 @@ function LeftPanel() {
               className="btn btn-sm"
               onClick={() => updateFurniture(selected.id, { rotation: ((selected.rotation ?? 0) + 90) % 360 })}
             >
-              Rotate +90°
+              +90°
             </button>
             <button
               className="btn btn-sm"
               onClick={() => updateFurniture(selected.id, { rotation: ((selected.rotation ?? 0) - 90 + 360) % 360 })}
             >
-              Rotate -90°
+              -90°
             </button>
           </div>
           <button
@@ -120,7 +260,7 @@ function LeftPanel() {
         </div>
       ) : (
         <div className="panel-section" style={{ color: 'var(--text-2)', fontSize: 12 }}>
-          💡 Click any 3D furniture item to view or adjust its position &amp; rotation.
+          💡 Click any furniture mesh to adjust its position &amp; orientation.
         </div>
       )}
 
@@ -131,35 +271,84 @@ function LeftPanel() {
   )
 }
 
-// ─── Babylon.js Canvas ────────────────────────────────────────────────────────
-
-function hexToColor3(hex: string): Color3 {
-  const r = parseInt(hex.slice(1, 3), 16) / 255
-  const g = parseInt(hex.slice(3, 5), 16) / 255
-  const b = parseInt(hex.slice(5, 7), 16) / 255
-  return new Color3(r, g, b)
-}
-
-function canvasBgToColor4(hex: string): Color4 {
-  const c = hexToColor3(hex)
-  return new Color4(c.r, c.g, c.b, 1)
-}
-
-let engineRef: Engine | null = null
-let sceneRef: Scene | null = null
-let cameraRef: ArcRotateCamera | null = null
-
-export function getScene() { return sceneRef }
+// ─── Babylon.js Canvas (Combined 3D & 2D Top View + Ghosts) ───────────────────
 
 function BabylonCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const { furniture, display, selectedId, setSelectedId, theme } = useAppStore()
+  const {
+    furniture, display, setDisplay, selectedId, setSelectedId,
+    theme, plan, playbackStep, setPlaybackStep,
+    playbackPlaying, setPlaybackPlaying,
+    playbackProgress, setPlaybackProgress,
+  } = useAppStore()
+
+  const [viewMode, setLocalViewMode] = useState<'3d' | '2d'>(display.viewMode ?? '3d')
 
   const BG_MAP: Record<string, string> = {
     dark:  '#0f172a',
     light: '#f1f5f9',
     cream: '#fefce8',
   }
+
+  // Camera view switcher
+  const switchView = (mode: '3d' | '2d') => {
+    setLocalViewMode(mode)
+    setDisplay({ viewMode: mode })
+    const camera = cameraRef
+    if (!camera) return
+
+    if (mode === '2d') {
+      camera.mode = ArcRotateCamera.ORTHOGRAPHIC_CAMERA
+      camera.alpha = -Math.PI / 2
+      camera.beta = 0.001 // looking directly straight down
+      camera.setTarget(new Vector3(2.5, 0, 1.3))
+      camera.orthoTop = 3.6
+      camera.orthoBottom = -2.4
+      camera.orthoLeft = -1.0
+      camera.orthoRight = 6.0
+    } else {
+      camera.mode = ArcRotateCamera.PERSPECTIVE_CAMERA
+      camera.alpha = -Math.PI / 3
+      camera.beta = Math.PI / 3.4
+      camera.radius = 11.5
+      camera.setTarget(new Vector3(2.5, 0.4, 1.6))
+    }
+  }
+
+  // Animation loop for smooth playback
+  useEffect(() => {
+    let animId: number
+    let lastTime = performance.now()
+
+    if (playbackPlaying && plan && plan.steps.length > 0) {
+      const loop = (now: number) => {
+        const dt = (now - lastTime) / 1000
+        lastTime = now
+
+        const stepSpeed = 0.9 // units per second
+        const newProgress = playbackProgress + dt * stepSpeed
+
+        if (newProgress >= 1.0) {
+          if (playbackStep < plan.steps.length - 1) {
+            setPlaybackStep(playbackStep + 1)
+            setPlaybackProgress(0.0)
+          } else {
+            setPlaybackProgress(1.0)
+            setPlaybackPlaying(false)
+          }
+        } else {
+          setPlaybackProgress(newProgress)
+        }
+
+        animId = requestAnimationFrame(loop)
+      }
+      animId = requestAnimationFrame(loop)
+    }
+
+    return () => {
+      if (animId) cancelAnimationFrame(animId)
+    }
+  }, [playbackPlaying, playbackStep, playbackProgress, plan])
 
   // Initialize Babylon Scene & Camera
   useEffect(() => {
@@ -173,7 +362,6 @@ function BabylonCanvas() {
 
     scene.clearColor = canvasBgToColor4(BG_MAP[theme] ?? BG_MAP.dark)
 
-    // Center camera on bedroom & hallway center (x: 2.5m, z: 1.6m)
     const camera = new ArcRotateCamera(
       'cam',
       -Math.PI / 3,
@@ -182,14 +370,13 @@ function BabylonCanvas() {
       new Vector3(2.5, 0.4, 1.6),
       scene
     )
-    camera.mode = 0 // Perspective for realistic depth
-    camera.lowerRadiusLimit = 4
+    camera.mode = ArcRotateCamera.PERSPECTIVE_CAMERA
+    camera.lowerRadiusLimit = 3
     camera.upperRadiusLimit = 25
-    camera.upperBetaLimit = Math.PI / 2.05
+    camera.upperBetaLimit = Math.PI / 2.02
     camera.attachControl(canvasRef.current, true)
     cameraRef = camera
 
-    // Soft Ambient + Directional lighting
     const hemiLight = new HemisphericLight('hemi-light', new Vector3(0.5, 2, 0.5), scene)
     hemiLight.intensity = 0.85
     hemiLight.groundColor = new Color3(0.15, 0.18, 0.25)
@@ -227,21 +414,27 @@ function BabylonCanvas() {
     }
   }, [theme])
 
-  // Sync Room Architecture & Furniture Meshes
+  // Sync Room Architecture, Furniture Meshes, Ghosts, and Pathways
   useEffect(() => {
     const scene = sceneRef
     if (!scene) return
 
-    // 1. Clear previous furniture and clearance meshes
+    // Clear previous transient meshes
     scene.meshes
-      .filter(m => m.name.startsWith('furn-') || m.name.startsWith('clearance-') || m.name.startsWith('arch-'))
+      .filter(m =>
+        m.name.startsWith('furn-') ||
+        m.name.startsWith('clearance-') ||
+        m.name.startsWith('arch-') ||
+        m.name.startsWith('ghost-') ||
+        m.name.startsWith('pathway-')
+      )
       .forEach(m => m.dispose())
 
-    const SCALE = 0.01 // 1 cm = 0.01 Babylon units (1 meter)
-    const roomW = 5.0  // 500 cm
-    const roomD = 3.8  // 380 cm
+    const SCALE = 0.01 // 1 cm = 0.01 units
+    const roomW = 5.0
+    const roomD = 3.8
 
-    // 2. Room Floor
+    // 1. Room Floor
     let floor = scene.getMeshByName('room-floor') as Mesh
     if (!floor) {
       floor = MeshBuilder.CreateBox('room-floor', { width: roomW, height: 0.02, depth: roomD }, scene)
@@ -254,7 +447,7 @@ function BabylonCanvas() {
     floor.position.z = roomD / 2
     floor.position.y = -0.01
 
-    // 3. Hallway Floor (x: 1.6m to 3.4m, z: -1.4m to 0m)
+    // 2. Hallway Floor (x: 1.6m to 3.4m, z: -1.4m to 0m)
     let hwFloor = scene.getMeshByName('hallway-floor') as Mesh
     if (!hwFloor) {
       hwFloor = MeshBuilder.CreateBox('hallway-floor', { width: 1.8, height: 0.02, depth: 1.4 }, scene)
@@ -267,7 +460,7 @@ function BabylonCanvas() {
     hwFloor.position.z = -0.7
     hwFloor.position.y = -0.01
 
-    // 4. Low Architectural Perimeter Walls (height 0.35m = 35cm)
+    // 3. Low Architectural Walls
     const wallH = 0.35
     const wallThick = 0.08
     const wallMat = new StandardMaterial('wall-mat', scene)
@@ -282,83 +475,163 @@ function BabylonCanvas() {
       wall.material = wallMat
     }
 
-    // North wall (back)
     createWall('wall-n', roomW + wallThick * 2, wallThick, roomW / 2, roomD + wallThick / 2)
-    // West wall (left)
     createWall('wall-w', wallThick, roomD, -wallThick / 2, roomD / 2)
-    // East wall (right)
     createWall('wall-e', wallThick, roomD, roomW + wallThick / 2, roomD / 2)
-    // South wall left (from x:0 to x:1.6)
     createWall('wall-s-left', 1.6, wallThick, 0.8, -wallThick / 2)
-    // South wall right (from x:3.4 to x:5.0)
     createWall('wall-s-right', 1.6, wallThick, 4.2, -wallThick / 2)
-    // Hallway west wall
     createWall('hw-wall-w', wallThick, 1.4, 1.6 - wallThick / 2, -0.7)
-    // Hallway east wall
     createWall('hw-wall-e', wallThick, 1.4, 3.4 + wallThick / 2, -0.7)
 
-    // 5. Render Placed Furniture
-    for (const f of furniture) {
-      if (!f.visible || !f.position) continue
+    // 4. Ghost Sweep Volume & Pathways (The Crucial Visualization)
+    const currentStep = plan?.steps[playbackStep]
+    const activeFurniture = furniture.find(f => f.id === currentStep?.furnitureId)
 
-      // Collision detection with other visible items
-      let hasCollision = false
-      for (const other of furniture) {
-        if (other.id === f.id || !other.visible || !other.position) continue
-        const a = furnitureToOBB(f.position.x, f.position.y, f.rotation ?? 0, f.assembled.w, f.assembled.d)
-        const b = furnitureToOBB(other.position.x, other.position.y, other.rotation ?? 0, other.assembled.w, other.assembled.d)
-        const test = satTest(a, b)
-        if (test.overlapping && test.penetrationCm > 1.5) {
-          hasCollision = true
-          break
-        }
+    if (display.showGhostTrail && currentStep && activeFurniture && currentStep.pathNodes && currentStep.pathNodes.length > 0) {
+      const pathNodes = currentStep.pathNodes
+      const af = activeFurniture
+
+      // Sample 5 keyframe waypoints along the trajectory for the ghost silhouettes
+      const indices: number[] = []
+      const count = Math.min(5, pathNodes.length)
+      for (let i = 0; i < count; i++) {
+        indices.push(Math.round((i / (count - 1)) * (pathNodes.length - 1)))
       }
 
-      const isSelected = f.id === selectedId
+      // Shared holographic ghost material
+      const ghostMat = new StandardMaterial('ghost-mat', scene)
+      ghostMat.diffuseColor = hexToColor3('#06b6d4')
+      ghostMat.emissiveColor = hexToColor3('#0891b2').scale(0.35)
+      ghostMat.alpha = 0.22
+      ghostMat.specularColor = new Color3(0.5, 0.8, 1.0)
 
-      // Main furniture box mesh
+      indices.forEach((nodeIdx, gIdx) => {
+        const node = pathNodes[nodeIdx]
+        const ghost = MeshBuilder.CreateBox(`ghost-box-${gIdx}`, {
+          width: af.assembled.w * SCALE,
+          height: af.assembled.h * SCALE,
+          depth: af.assembled.d * SCALE,
+        }, scene)
+
+        ghost.position.x = (node.x + af.assembled.w / 2) * SCALE
+        ghost.position.z = (node.y + af.assembled.d / 2) * SCALE
+        ghost.position.y = (af.assembled.h / 2) * SCALE
+        ghost.rotation.y = (node.rot * Math.PI) / 180
+        ghost.material = ghostMat
+
+        // Glowing architectural edge outlines
+        ghost.enableEdgesRendering(0.95)
+        ghost.edgesWidth = 2.0
+        ghost.edgesColor = new Color4(0.02, 0.85, 1.0, 0.75)
+
+        // Floor waypoint marker
+        const disc = MeshBuilder.CreateDisc(`ghost-disc-${gIdx}`, { radius: 0.12 }, scene)
+        disc.rotation.x = Math.PI / 2
+        disc.position.x = ghost.position.x
+        disc.position.z = ghost.position.z
+        disc.position.y = 0.003
+        const discMat = new StandardMaterial(`ghost-disc-mat-${gIdx}`, scene)
+        discMat.diffuseColor = hexToColor3('#06b6d4')
+        discMat.emissiveColor = hexToColor3('#06b6d4')
+        disc.material = discMat
+      })
+
+      // Ground path ribbon connecting all waypoints
+      const points = pathNodes.map(n => new Vector3(
+        (n.x + af.assembled.w / 2) * SCALE,
+        0.004,
+        (n.y + af.assembled.d / 2) * SCALE
+      ))
+
+      const pathLine = MeshBuilder.CreateLines('pathway-line', { points }, scene)
+      pathLine.color = new Color3(0.02, 0.85, 1.0)
+    }
+
+    // 5. Render Furniture (with motion interpolation & staging)
+    for (let i = 0; i < furniture.length; i++) {
+      const f = furniture[i]
+      if (!f.visible || !f.position) continue
+
+      const isSelected = f.id === selectedId
+      const planIdx = plan?.steps.findIndex(s => s.furnitureId === f.id) ?? -1
+
+      // Determine mesh position & rotation based on playback state
+      let posX = (f.position.x + f.assembled.w / 2) * SCALE
+      let posZ = (f.position.y + f.assembled.d / 2) * SCALE
+      let posY = (f.assembled.h / 2) * SCALE
+      let rotY = ((f.rotation ?? 0) * Math.PI) / 180
+      let meshAlpha = 1.0
+
+      // If active item in simulation, interpolate along its path
+      if (plan && planIdx === playbackStep && currentStep && currentStep.pathNodes && currentStep.pathNodes.length > 0) {
+        const pNodes = currentStep.pathNodes
+        const floatIdx = playbackProgress * (pNodes.length - 1)
+        const baseIdx = Math.min(Math.floor(floatIdx), pNodes.length - 1)
+        const nextIdx = Math.min(baseIdx + 1, pNodes.length - 1)
+        const alpha = floatIdx - baseIdx
+
+        const n1 = pNodes[baseIdx]
+        const n2 = pNodes[nextIdx]
+
+        const curX = n1.x + (n2.x - n1.x) * alpha
+        const curY = n1.y + (n2.y - n1.y) * alpha
+        const curRot = n1.rot + (n2.rot - n1.rot) * alpha
+
+        posX = (curX + f.assembled.w / 2) * SCALE
+        posZ = (curY + f.assembled.d / 2) * SCALE
+        rotY = (curRot * Math.PI) / 180
+      } else if (plan && planIdx > playbackStep) {
+        // Items not yet entered: stage outside in hallway staging queue
+        const queuePos = planIdx - playbackStep
+        posX = 2.5
+        posZ = -1.4 - queuePos * 0.75
+        posY = (f.assembled.h / 2) * SCALE
+        rotY = 0
+        meshAlpha = 0.45
+      }
+
+      // Main box mesh
       const mesh = MeshBuilder.CreateBox(`furn-${f.id}`, {
         width: f.assembled.w * SCALE,
         height: f.assembled.h * SCALE,
         depth: f.assembled.d * SCALE,
       }, scene)
 
-      mesh.position.x = (f.position.x + f.assembled.w / 2) * SCALE
-      mesh.position.z = (f.position.y + f.assembled.d / 2) * SCALE
-      mesh.position.y = (f.assembled.h / 2) * SCALE
-      mesh.rotation.y = ((f.rotation ?? 0) * Math.PI) / 180
+      mesh.position.x = posX
+      mesh.position.z = posZ
+      mesh.position.y = posY
+      mesh.rotation.y = rotY
 
-      // Solid architectural material
+      // Material
       const mat = new StandardMaterial(`mat-${f.id}`, scene)
-      if (hasCollision) {
-        mat.diffuseColor = hexToColor3(display.collisionColor)
-        mat.emissiveColor = hexToColor3(display.collisionColor).scale(0.3)
-      } else {
-        const baseColor = display.materialMode === 'fallback'
-          ? display.fallbackColor
-          : f.color
-        mat.diffuseColor = hexToColor3(baseColor)
-        mat.specularColor = new Color3(0.2, 0.2, 0.2)
-        if (isSelected) {
-          mat.emissiveColor = hexToColor3('#0284c7').scale(0.25)
-        }
+      const baseColor = display.materialMode === 'fallback'
+        ? display.fallbackColor
+        : f.color
+      mat.diffuseColor = hexToColor3(baseColor)
+      mat.specularColor = new Color3(0.2, 0.2, 0.2)
+      mat.alpha = meshAlpha
+
+      if (isSelected) {
+        mat.emissiveColor = hexToColor3('#0284c7').scale(0.3)
+      } else if (planIdx === playbackStep) {
+        mat.emissiveColor = hexToColor3('#38bdf8').scale(0.25)
       }
 
-      // DO NOT set mat.wireframe = true! Use clean edge rendering for architectural bounding outlines
       mesh.material = mat
 
-      if (display.showBoundingBox || isSelected) {
+      // Clean architectural edges
+      if (display.showBoundingBox || isSelected || planIdx === playbackStep) {
         mesh.enableEdgesRendering(0.9)
-        mesh.edgesWidth = isSelected ? 4.0 : 2.0
-        const outlineHex = isSelected ? '#38bdf8' : display.boundingBoxColor
+        mesh.edgesWidth = isSelected ? 4.0 : (planIdx === playbackStep ? 3.0 : 2.0)
+        const outlineHex = isSelected ? '#38bdf8' : (planIdx === playbackStep ? '#00e5ff' : display.boundingBoxColor)
         const oc = hexToColor3(outlineHex)
         mesh.edgesColor = new Color4(oc.r, oc.g, oc.b, isSelected ? 1.0 : display.boundingBoxOpacity)
       }
 
       mesh.isPickable = true
 
-      // 6. Clearance Zone overlay
-      if (display.showClearanceZone && f.clearance.front) {
+      // Clearance zone overlay for items in final position
+      if (display.showClearanceZone && f.clearance.front && (planIdx <= playbackStep || planIdx === -1)) {
         const czDepth = f.clearance.front * SCALE
         const cz = MeshBuilder.CreatePlane(`clearance-${f.id}`, {
           width: f.assembled.w * SCALE,
@@ -375,29 +648,48 @@ function BabylonCanvas() {
         cz.material = czMat
       }
     }
-  }, [furniture, display, selectedId, theme])
+  }, [furniture, display, selectedId, theme, plan, playbackStep, playbackProgress])
 
-  return <canvas ref={canvasRef} id="babylon-canvas" style={{ width: '100%', height: '100%' }} />
+  return (
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <canvas ref={canvasRef} id="babylon-canvas" style={{ width: '100%', height: '100%' }} />
+
+      {/* Floating 2D / 3D Mode & Viewport Controls */}
+      <div className="canvas-view-toolbar">
+        <button
+          className={`view-btn${viewMode === '3d' ? ' active' : ''}`}
+          onClick={() => switchView('3d')}
+          title="3D Perspective Orbit View"
+        >
+          🧊 3D Orbit
+        </button>
+        <button
+          className={`view-btn${viewMode === '2d' ? ' active' : ''}`}
+          onClick={() => switchView('2d')}
+          title="2D Top-Down Architectural Blueprint Plan"
+        >
+          📐 2D Top Plan
+        </button>
+        <button
+          className="view-btn"
+          onClick={() => switchView(viewMode)}
+          title="Reset Camera to Default"
+        >
+          ↺ Reset
+        </button>
+        <button
+          className={`view-btn${display.showGhostTrail ? ' ghost-active' : ''}`}
+          onClick={() => setDisplay({ showGhostTrail: !display.showGhostTrail })}
+          title="Toggle Ghost Sweep Volume along entry path"
+        >
+          👻 Ghost
+        </button>
+      </div>
+    </div>
+  )
 }
 
-// ─── Camera preset actions ───────────────────────────────────────────────────
-
-function resetCamera(view: 'iso' | 'top') {
-  if (!cameraRef) return
-  if (view === 'iso') {
-    cameraRef.alpha = -Math.PI / 3
-    cameraRef.beta = Math.PI / 3.4
-    cameraRef.radius = 11.5
-    cameraRef.setTarget(new Vector3(2.5, 0.4, 1.6))
-  } else if (view === 'top') {
-    cameraRef.alpha = -Math.PI / 2
-    cameraRef.beta = 0.05
-    cameraRef.radius = 10
-    cameraRef.setTarget(new Vector3(2.5, 0, 1.6))
-  }
-}
-
-// ─── EditorView ───────────────────────────────────────────────────────────────
+// ─── Main Unified EditorView (3D Studio & Simulation Combined) ────────────────
 
 export function EditorView() {
   return (
@@ -406,21 +698,10 @@ export function EditorView() {
         <LeftPanel />
         <div className="editor-canvas">
           <BabylonCanvas />
-          <div className="canvas-controls">
-            <button className="btn btn-sm" title="Isometric View" onClick={() => resetCamera('iso')}>
-              ⊞ Isometric
-            </button>
-            <button className="btn btn-sm" title="Top-Down Plan" onClick={() => resetCamera('top')}>
-              ⬛ Top Plan
-            </button>
-            <button className="btn btn-sm" title="Reset Camera" onClick={() => resetCamera('iso')}>
-              ↺ Reset
-            </button>
-          </div>
         </div>
         <ResultsPanel />
       </div>
-      <StepSlider />
+      <SimulationTimelineDock />
     </div>
   )
 }
